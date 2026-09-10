@@ -14,6 +14,36 @@ load_dotenv(BASE_DIR / ".env")
 
 
 # ============================================================
+# HELPERS
+# ============================================================
+
+def get_bool(
+    value,
+    default=False,
+):
+    if value is None:
+        return default
+
+    return str(value).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "enabled",
+    }
+
+
+# ============================================================
+# DATABASE URL
+# ============================================================
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    f"sqlite:///{BASE_DIR / 'netsentinel.db'}",
+)
+
+
+# ============================================================
 # APPLICATION CONFIGURATION
 # ============================================================
 
@@ -32,50 +62,119 @@ class Config:
     # Database
     # --------------------------------------------------------
 
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL",
-        f"sqlite:///{BASE_DIR / 'netsentinel.db'}",
-    )
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # --------------------------------------------------------
+    # SQLite engine options
+    #
+    # SQLite is used by the student/prototype deployment.
+    #
+    # timeout:
+    #     Wait for a short period instead of immediately raising
+    #     "database is locked".
+    #
+    # check_same_thread:
+    #     Allows the SQLAlchemy SQLite connection layer to work
+    #     correctly with NETSENTINEL background threads.
+    # --------------------------------------------------------
+
+    if DATABASE_URL.startswith(
+        "sqlite:"
+    ):
+
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "connect_args": {
+                "timeout": 30,
+                "check_same_thread": False,
+            }
+        }
+
+    else:
+
+        SQLALCHEMY_ENGINE_OPTIONS = {}
 
     # --------------------------------------------------------
     # NETSENTINEL MODE
     #
     # Supported:
     #
-    #   LIVE
-    #   DEMO
+    #     LIVE
+    #     DEMO
     #
-    # NETSENTINEL_MODE is the primary setting.
-    # MONITOR_MODE is retained as a fallback for compatibility.
+    # DEMO is deliberately the safe default for deployment.
+    # Local LIVE capture should be explicitly enabled.
     # --------------------------------------------------------
 
     NETSENTINEL_MODE = os.getenv(
         "NETSENTINEL_MODE",
         os.getenv(
             "MONITOR_MODE",
-            "LIVE",
+            "DEMO",
         ),
-    ).upper()
+    ).strip().upper()
 
-    # Compatibility alias
+    if NETSENTINEL_MODE not in {
+        "LIVE",
+        "DEMO",
+        "SIMULATION",
+        "TEST",
+        "PRODUCTION",
+        "REAL",
+    }:
+
+        NETSENTINEL_MODE = "DEMO"
+
+    # Compatibility aliases
+
     MODE = NETSENTINEL_MODE
 
     MONITOR_MODE = NETSENTINEL_MODE
 
     # --------------------------------------------------------
     # Monitoring
+    #
+    # IMPORTANT:
+    #
+    # Render should explicitly use:
+    #
+    #     MONITORING_ENABLED=false
+    #
+    # This prevents accidental live capture.
     # --------------------------------------------------------
 
     MONITOR_INTERFACE = os.getenv(
         "MONITOR_INTERFACE",
         "",
+    ).strip()
+
+    MONITORING_ENABLED = get_bool(
+        os.getenv(
+            "MONITORING_ENABLED",
+            "false",
+        ),
+        default=False,
     )
 
-    MONITORING_ENABLED = os.getenv(
-        "MONITORING_ENABLED",
-        "true",
+    # --------------------------------------------------------
+    # Capture batching
+    #
+    # Background packet capture should NOT commit every packet.
+    # --------------------------------------------------------
+
+    CAPTURE_BATCH_SIZE = int(
+        os.getenv(
+            "CAPTURE_BATCH_SIZE",
+            "25",
+        )
+    )
+
+    CAPTURE_BATCH_FLUSH_SECONDS = float(
+        os.getenv(
+            "CAPTURE_BATCH_FLUSH_SECONDS",
+            "1.0",
+        )
     )
 
     # --------------------------------------------------------

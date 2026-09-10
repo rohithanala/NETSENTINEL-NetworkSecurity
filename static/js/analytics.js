@@ -1,17 +1,14 @@
-/* ============================================================
-   NETSENTINEL - ANALYTICS
-   Real-time traffic, protocol, security and network analytics
-   ============================================================ */
-
 (() => {
     "use strict";
 
-    console.log("NETSENTINEL: Initializing analytics...");
+    console.log(
+        "NETSENTINEL: Initializing analytics..."
+    );
 
 
     /* ============================================================
        STATE
-       ============================================================ */
+    ============================================================ */
 
     const state = {
         range: "5m",
@@ -37,50 +34,92 @@
 
 
     /* ============================================================
+       GRAPH CONFIGURATION
+    ============================================================ */
+
+    const GRAPH_SECONDS = 60;
+
+    const GRAPH_SAMPLE_INTERVAL = 1000;
+
+    const GRAPH_SMOOTHING_WINDOW = 2;
+
+
+    /* ============================================================
        DOM HELPERS
-       ============================================================ */
+    ============================================================ */
 
     function $(id) {
-        return document.getElementById(id);
+        return document.getElementById(
+            id
+        );
     }
 
-    function setText(id, value) {
-        const element = $(id);
+
+    function setText(
+        id,
+        value
+    ) {
+        const element =
+            $(
+                id
+            );
 
         if (element) {
-            element.textContent = value;
+            element.textContent =
+                value;
         }
     }
 
-    function showElement(id, display = "") {
-        const element = $(id);
+
+    function showElement(
+        id,
+        display = ""
+    ) {
+        const element =
+            $(
+                id
+            );
 
         if (element) {
-            element.style.display = display;
+            element.style.display =
+                display;
         }
     }
 
-    function hideElement(id) {
-        const element = $(id);
+
+    function hideElement(
+        id
+    ) {
+        const element =
+            $(
+                id
+            );
 
         if (element) {
-            element.style.display = "none";
+            element.style.display =
+                "none";
         }
     }
 
 
     /* ============================================================
        ERROR HANDLING
-       ============================================================ */
+    ============================================================ */
 
-    function showError(message) {
-        const element = $("analyticsError");
+    function showError(
+        message
+    ) {
+        const element =
+            $(
+                "analyticsError"
+            );
 
         if (!element) {
             console.error(
                 "NETSENTINEL Analytics:",
                 message
             );
+
             return;
         }
 
@@ -88,25 +127,34 @@
             message ||
             "Unable to load analytics data.";
 
-        element.style.display = "block";
+        element.style.display =
+            "block";
     }
+
 
     function hideError() {
         const element =
-            $("analyticsError");
+            $(
+                "analyticsError"
+            );
 
         if (element) {
-            element.textContent = "";
-            element.style.display = "none";
+            element.textContent =
+                "";
+
+            element.style.display =
+                "none";
         }
     }
 
 
     /* ============================================================
        API HELPER
-       ============================================================ */
+    ============================================================ */
 
-    async function api(url) {
+    async function api(
+        url
+    ) {
         const separator =
             url.includes("?")
                 ? "&"
@@ -117,6 +165,7 @@
                 `${url}${separator}_=${Date.now()}`,
                 {
                     cache: "no-store",
+
                     headers: {
                         "Accept":
                             "application/json"
@@ -136,127 +185,179 @@
 
     /* ============================================================
        NUMBER HELPERS
-       ============================================================ */
+    ============================================================ */
 
-    function number(value, fallback = 0) {
+    function number(
+        value,
+        fallback = 0
+    ) {
         const parsed =
-            Number(value);
+            Number(
+                value
+            );
 
-        return Number.isFinite(parsed)
+        return Number.isFinite(
+            parsed
+        )
             ? parsed
             : fallback;
     }
 
-    function integer(value, fallback = 0) {
+
+    function integer(
+        value,
+        fallback = 0
+    ) {
         return Math.round(
-            number(value, fallback)
+            number(
+                value,
+                fallback
+            )
         );
     }
 
-    function formatNumber(value) {
-        return integer(value)
-            .toLocaleString("en-IN");
+
+    function formatNumber(
+        value
+    ) {
+        return integer(
+            value
+        ).toLocaleString(
+            "en-IN"
+        );
     }
 
-    function formatBytes(value) {
-        const bytes =
-            number(value);
 
-        if (bytes < 1024) {
+    function formatBytes(
+        value
+    ) {
+        const bytes =
+            number(
+                value
+            );
+
+        if (
+            bytes < 1024
+        ) {
             return `${Math.round(bytes)} B`;
         }
 
-        if (bytes < 1024 * 1024) {
+        if (
+            bytes <
+            1024 * 1024
+        ) {
             return `${(
-                bytes / 1024
+                bytes /
+                1024
             ).toFixed(1)} KB`;
         }
 
         if (
             bytes <
-            1024 * 1024 * 1024
+            1024 *
+            1024 *
+            1024
         ) {
             return `${(
                 bytes /
-                (1024 * 1024)
+                (
+                    1024 *
+                    1024
+                )
             ).toFixed(1)} MB`;
         }
 
         return `${(
             bytes /
-            (1024 * 1024 * 1024)
+            (
+                1024 *
+                1024 *
+                1024
+            )
         ).toFixed(2)} GB`;
     }
 
-    function formatRate(value) {
-        const rate =
-            number(value);
 
-        if (rate >= 1000000) {
+    function formatRate(
+        value
+    ) {
+        const rate =
+            number(
+                value
+            );
+
+        if (
+            rate >= 1000000
+        ) {
             return `${(
-                rate / 1000000
+                rate /
+                1000000
             ).toFixed(1)}M`;
         }
 
-        if (rate >= 1000) {
+        if (
+            rate >= 1000
+        ) {
             return `${(
-                rate / 1000
+                rate /
+                1000
             ).toFixed(1)}K`;
         }
 
-        return `${Math.round(rate)}`;
+        return `${Math.round(
+            rate
+        )}`;
     }
 
 
     /* ============================================================
        TIME HELPERS
-       IMPORTANT:
-       Backend timestamps are naive ISO timestamps representing UTC.
-       Example:
-       2026-09-09T09:44:00.498362
+    ============================================================ */
 
-       JavaScript otherwise interprets this as local IST time.
-       ============================================================ */
-
-    function parseTime(value) {
+    function parseTime(
+        value
+    ) {
         if (!value) {
             return null;
         }
 
         let text =
-            String(value).trim();
-
-        /*
-         * Backend timestamps may contain:
-         *
-         * 2026-09-09T09:44:00.498362
-         *
-         * with no timezone.
-         *
-         * Treat timezone-less ISO timestamps as UTC.
-         */
+            String(
+                value
+            ).trim();
 
         if (
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(
                 text
             ) &&
-            !/[zZ]$/.test(text) &&
-            !/[+-]\d{2}:\d{2}$/.test(text)
+            !/[zZ]$/.test(
+                text
+            ) &&
+            !/[+-]\d{2}:\d{2}$/.test(
+                text
+            )
         ) {
-            text += "Z";
+            text +=
+                "Z";
         }
 
         const timestamp =
-            new Date(text).getTime();
+            new Date(
+                text
+            ).getTime();
 
-        return Number.isFinite(timestamp)
+        return Number.isFinite(
+            timestamp
+        )
             ? timestamp
             : null;
     }
 
 
     function rangeMilliseconds() {
-        switch (state.range) {
+        switch (
+            state.range
+        ) {
             case "15m":
                 return (
                     15 *
@@ -286,7 +387,9 @@
 
 
     function rangeLabel() {
-        switch (state.range) {
+        switch (
+            state.range
+        ) {
             case "15m":
                 return "15 MIN";
 
@@ -305,38 +408,50 @@
 
     /* ============================================================
        PROTOCOL NORMALIZATION
-       ============================================================ */
+    ============================================================ */
 
-    function normalizeProtocol(protocol) {
+    function normalizeProtocol(
+        protocol
+    ) {
         if (!protocol) {
             return "OTHER";
         }
 
         const value =
-            String(protocol)
+            String(
+                protocol
+            )
                 .trim()
                 .toUpperCase();
 
         if (
-            value.includes("TCP")
+            value.includes(
+                "TCP"
+            )
         ) {
             return "TCP";
         }
 
         if (
-            value.includes("UDP")
+            value.includes(
+                "UDP"
+            )
         ) {
             return "UDP";
         }
 
         if (
-            value.includes("ICMP")
+            value.includes(
+                "ICMP"
+            )
         ) {
             return "ICMP";
         }
 
         if (
-            value.includes("IPV6") ||
+            value.includes(
+                "IPV6"
+            ) ||
             value === "IP6"
         ) {
             return "IPv6";
@@ -348,9 +463,11 @@
 
     /* ============================================================
        SEVERITY NORMALIZATION
-       ============================================================ */
+    ============================================================ */
 
-    function normalizeSeverity(severity) {
+    function normalizeSeverity(
+        severity
+    ) {
         const value =
             String(
                 severity || ""
@@ -358,15 +475,21 @@
                 .trim()
                 .toUpperCase();
 
-        if (value === "CRITICAL") {
+        if (
+            value === "CRITICAL"
+        ) {
             return "CRITICAL";
         }
 
-        if (value === "HIGH") {
+        if (
+            value === "HIGH"
+        ) {
             return "HIGH";
         }
 
-        if (value === "MEDIUM") {
+        if (
+            value === "MEDIUM"
+        ) {
             return "MEDIUM";
         }
 
@@ -376,11 +499,14 @@
 
     /* ============================================================
        TRAFFIC RANGE FILTER
-       ============================================================ */
+    ============================================================ */
 
-    function trafficInRange(record) {
+    function trafficInRange(
+        record
+    ) {
         if (
-            state.range === "all"
+            state.range ===
+            "all"
         ) {
             return true;
         }
@@ -391,15 +517,20 @@
             );
 
         if (
-            timestamp === null
+            timestamp ===
+            null
         ) {
-            return true;
+            return false;
         }
 
-        return (
+        const age =
             Date.now() -
-                timestamp <=
-            rangeMilliseconds()
+            timestamp;
+
+        return (
+            age >= 0 &&
+            age <=
+                rangeMilliseconds()
         );
     }
 
@@ -413,9 +544,11 @@
 
     /* ============================================================
        ALERT RANGE FILTER
-       ============================================================ */
+    ============================================================ */
 
-    function alertTimestamp(alert) {
+    function alertTimestamp(
+        alert
+    ) {
         return (
             alert.timestamp ||
             alert.created_at ||
@@ -426,28 +559,38 @@
     }
 
 
-    function alertInRange(alert) {
+    function alertInRange(
+        alert
+    ) {
         if (
-            state.range === "all"
+            state.range ===
+            "all"
         ) {
             return true;
         }
 
         const timestamp =
             parseTime(
-                alertTimestamp(alert)
+                alertTimestamp(
+                    alert
+                )
             );
 
         if (
-            timestamp === null
+            timestamp ===
+            null
         ) {
-            return true;
+            return false;
         }
 
-        return (
+        const age =
             Date.now() -
-                timestamp <=
-            rangeMilliseconds()
+            timestamp;
+
+        return (
+            age >= 0 &&
+            age <=
+                rangeMilliseconds()
         );
     }
 
@@ -461,12 +604,14 @@
 
     /* ============================================================
        TRAFFIC METRICS
-       ============================================================ */
+    ============================================================ */
 
     function calculateTrafficMetrics(
         records
     ) {
-        if (!records.length) {
+        if (
+            !records.length
+        ) {
             return {
                 packets: 0,
                 bytes: 0,
@@ -497,27 +642,32 @@
                 )
                 .filter(
                     value =>
-                        value !== null
+                        value !==
+                        null
                 )
                 .sort(
                     (a, b) =>
                         a - b
                 );
 
-        let durationSeconds = 1;
+        let durationSeconds =
+            1;
 
         if (
-            timestamps.length > 1
+            timestamps.length >
+            1
         ) {
             durationSeconds =
                 Math.max(
                     1,
                     (
                         timestamps[
-                            timestamps.length - 1
+                            timestamps.length -
+                                1
                         ] -
                         timestamps[0]
-                    ) / 1000
+                    ) /
+                        1000
                 );
         }
 
@@ -556,7 +706,9 @@
     function calculatePeakRate(
         records
     ) {
-        if (!records.length) {
+        if (
+            !records.length
+        ) {
             return 0;
         }
 
@@ -571,14 +723,16 @@
                     );
 
                 if (
-                    timestamp === null
+                    timestamp ===
+                    null
                 ) {
                     return;
                 }
 
                 const second =
                     Math.floor(
-                        timestamp / 1000
+                        timestamp /
+                            1000
                     );
 
                 buckets.set(
@@ -592,7 +746,9 @@
             }
         );
 
-        if (!buckets.size) {
+        if (
+            !buckets.size
+        ) {
             return 0;
         }
 
@@ -606,7 +762,7 @@
 
     /* ============================================================
        PROTOCOL ANALYTICS
-       ============================================================ */
+    ============================================================ */
 
     function calculateProtocols(
         records
@@ -626,7 +782,9 @@
                         record.protocol
                     );
 
-                result[protocol]++;
+                result[
+                    protocol
+                ]++;
             }
         );
 
@@ -638,7 +796,8 @@
         const source =
             state.analytics
                 .protocol_distribution ||
-            state.analytics.protocols ||
+            state.analytics
+                .protocols ||
             {};
 
         const result = {
@@ -658,8 +817,11 @@
                         key
                     );
 
-                result[protocol] +=
-                    number(value);
+                result[
+                    protocol
+                ] += number(
+                    value
+                );
             }
         );
 
@@ -669,7 +831,7 @@
 
     /* ============================================================
        SECURITY ANALYTICS
-       ============================================================ */
+    ============================================================ */
 
     function calculateSeverities(
         alerts
@@ -688,7 +850,9 @@
                         alert.severity
                     );
 
-                result[severity]++;
+                result[
+                    severity
+                ]++;
             }
         );
 
@@ -733,7 +897,7 @@
 
     /* ============================================================
        TOP IP ANALYTICS
-       ============================================================ */
+    ============================================================ */
 
     function calculateTopIps(
         records,
@@ -754,8 +918,9 @@
                 map.set(
                     ip,
                     (
-                        map.get(ip) ||
-                        0
+                        map.get(
+                            ip
+                        ) || 0
                     ) + 1
                 );
             }
@@ -775,13 +940,16 @@
                     b.packets -
                     a.packets
             )
-            .slice(0, 10);
+            .slice(
+                0,
+                10
+            );
     }
 
 
     /* ============================================================
        TOP PORT ANALYTICS
-       ============================================================ */
+    ============================================================ */
 
     function calculateTopPorts(
         records
@@ -803,13 +971,16 @@
                 }
 
                 const key =
-                    String(port);
+                    String(
+                        port
+                    );
 
                 map.set(
                     key,
                     (
-                        map.get(key) ||
-                        0
+                        map.get(
+                            key
+                        ) || 0
                     ) + 1
                 );
             }
@@ -829,62 +1000,33 @@
                     b.packets -
                     a.packets
             )
-            .slice(0, 10);
+            .slice(
+                0,
+                10
+            );
     }
 
 
     /* ============================================================
        DEVICE COUNT
-       ============================================================ */
+    ============================================================ */
 
     function calculateDeviceCount() {
-        if (
-            Array.isArray(
-                state.devices
-            ) &&
-            state.devices.length
-        ) {
-            const unique =
-                new Set();
-
-            state.devices.forEach(
-                device => {
-                    const value =
-                        device.ip_address ||
-                        device.ip ||
-                        device.mac_address ||
-                        device.mac ||
-                        device.hostname;
-
-                    if (value) {
-                        unique.add(
-                            value
-                        );
-                    }
-                }
-            );
-
-            if (
-                unique.size
-            ) {
-                return unique.size;
-            }
-        }
-
         return number(
-            state.stats.active_devices,
+            state.stats?.active_devices,
             number(
-                state.analytics.devices
+                state.analytics?.devices,
+                0
             )
         );
     }
 
 
     /* ============================================================
-       LIVE SAMPLE
-       ============================================================ */
+       ROLLING LIVE TRAFFIC HISTORY
+    ============================================================ */
 
-    function collectLiveSample() {
+    function buildRollingTrafficHistory() {
         const traffic =
             Array.isArray(
                 state.traffic
@@ -895,75 +1037,190 @@
         const now =
             Date.now();
 
-        const oneSecondAgo =
-            now - 1000;
+        const currentSecond =
+            Math.floor(
+                now /
+                1000
+            ) *
+            1000;
 
-        const recent =
-            traffic.filter(
-                record => {
-                    const timestamp =
-                        parseTime(
-                            record.timestamp
-                        );
+        const firstSecond =
+            currentSecond -
+            (
+                GRAPH_SECONDS -
+                1
+            ) *
+            GRAPH_SAMPLE_INTERVAL;
 
-                    return (
-                        timestamp !== null &&
-                        timestamp >=
-                            oneSecondAgo &&
-                        timestamp <=
-                            now + 2000
-                    );
+        const buckets =
+            new Map();
+
+        for (
+            let i = 0;
+            i <
+            GRAPH_SECONDS;
+            i++
+        ) {
+            const time =
+                firstSecond +
+                i *
+                GRAPH_SAMPLE_INTERVAL;
+
+            buckets.set(
+                time,
+                {
+                    time,
+                    packets: 0,
+                    bytes: 0
                 }
             );
+        }
 
-        const packets =
-            recent.length;
-
-        let bytes = 0;
-
-        recent.forEach(
+        traffic.forEach(
             record => {
-                bytes += number(
-                    record.packet_size
-                );
+                const timestamp =
+                    parseTime(
+                        record.timestamp
+                    );
+
+                if (
+                    timestamp ===
+                    null
+                ) {
+                    return;
+                }
+
+                if (
+                    timestamp <
+                    firstSecond
+                ) {
+                    return;
+                }
+
+                if (
+                    timestamp >
+                    currentSecond +
+                    999
+                ) {
+                    return;
+                }
+
+                const bucketTime =
+                    Math.floor(
+                        timestamp /
+                        1000
+                    ) *
+                    1000;
+
+                const bucket =
+                    buckets.get(
+                        bucketTime
+                    );
+
+                if (!bucket) {
+                    return;
+                }
+
+                bucket.packets++;
+
+                bucket.bytes +=
+                    number(
+                        record.packet_size
+                    );
             }
         );
 
-        state.liveHistory.push({
-            time: now,
-            packets,
-            bytes
-        });
-
-        const historyWindow =
-            state.range === "all"
-                ? 10 * 60 * 1000
-                : Math.max(
-                    10 * 60 * 1000,
-                    rangeMilliseconds()
-                );
-
-        const cutoff =
-            now -
-            historyWindow;
-
-        state.liveHistory =
-            state.liveHistory.filter(
-                point =>
-                    point.time >=
-                    cutoff
+        let points =
+            Array.from(
+                buckets.values()
+            ).sort(
+                (a, b) =>
+                    a.time -
+                    b.time
             );
 
-        return {
-            packets,
-            bytes
-        };
+        /*
+         * Light smoothing only.
+         * Real peaks and drops remain visible.
+         */
+
+        if (
+            GRAPH_SMOOTHING_WINDOW >
+            1
+        ) {
+            points =
+                points.map(
+                    (
+                        point,
+                        index
+                    ) => {
+                        const start =
+                            Math.max(
+                                0,
+                                index -
+                                GRAPH_SMOOTHING_WINDOW +
+                                1
+                            );
+
+                        let packetTotal =
+                            0;
+
+                        let byteTotal =
+                            0;
+
+                        let count =
+                            0;
+
+                        for (
+                            let i =
+                                start;
+                            i <= index;
+                            i++
+                        ) {
+                            packetTotal +=
+                                number(
+                                    points[i]
+                                        .packets
+                                );
+
+                            byteTotal +=
+                                number(
+                                    points[i]
+                                        .bytes
+                                );
+
+                            count++;
+                        }
+
+                        return {
+                            time:
+                                point.time,
+
+                            packets:
+                                packetTotal /
+                                Math.max(
+                                    1,
+                                    count
+                                ),
+
+                            bytes:
+                                byteTotal /
+                                Math.max(
+                                    1,
+                                    count
+                                )
+                        };
+                    }
+                );
+        }
+
+        return points;
     }
 
 
     /* ============================================================
        HISTORICAL HISTORY
-       ============================================================ */
+    ============================================================ */
 
     function buildHistoricalHistory(
         records
@@ -979,15 +1236,18 @@
                     );
 
                 if (
-                    timestamp === null
+                    timestamp ===
+                    null
                 ) {
                     return;
                 }
 
                 const second =
                     Math.floor(
-                        timestamp / 1000
-                    ) * 1000;
+                        timestamp /
+                        1000
+                    ) *
+                    1000;
 
                 if (
                     !buckets.has(
@@ -997,9 +1257,14 @@
                     buckets.set(
                         second,
                         {
-                            time: second,
-                            packets: 0,
-                            bytes: 0
+                            time:
+                                second,
+
+                            packets:
+                                0,
+
+                            bytes:
+                                0
                         }
                     );
                 }
@@ -1030,7 +1295,7 @@
 
     /* ============================================================
        KPI RENDERING
-       ============================================================ */
+    ============================================================ */
 
     function renderKpis() {
         const records =
@@ -1045,9 +1310,11 @@
             number(
                 state.analytics
                     .total_packets,
+
                 number(
                     state.stats
                         .total_packets,
+
                     number(
                         state.stats
                             .capture
@@ -1059,9 +1326,11 @@
         const totalAlerts =
             number(
                 state.analytics.alerts,
+
                 number(
                     state.analytics
                         .total_alerts,
+
                     number(
                         state.stats
                             .total_alerts
@@ -1072,17 +1341,48 @@
         const devices =
             calculateDeviceCount();
 
+
+        /* ========================================================
+           PPS FIX
+        ======================================================== */
+
         /*
-         * For a selected time range, display packets
-         * actually observed in that range.
+         * Backend stats already calculates traffic_rate_pps
+         * from the real recent traffic window.
          *
-         * ALL uses the backend lifetime total.
+         * This is the authoritative value for the KPI.
+         *
+         * The locally calculated value is only a fallback.
          */
 
+        const backendPps =
+            number(
+                state.stats?.traffic_rate_pps,
+                NaN
+            );
+
+        const packetsPerSecond =
+            Number.isFinite(
+                backendPps
+            )
+                ? backendPps
+                : metrics.packetsPerSecond;
+
+
+        /* ========================================================
+           PACKETS
+        ======================================================== */
+
         const packetsToDisplay =
-            state.range === "all"
+            state.range ===
+            "all"
                 ? totalPackets
                 : records.length;
+
+
+        /* ========================================================
+           RENDER
+        ======================================================== */
 
         setText(
             "totalPackets",
@@ -1108,23 +1408,32 @@
         setText(
             "trafficRate",
             formatRate(
-                metrics.packetsPerSecond
+                packetsPerSecond
             )
         );
 
+
         const meta =
-            $("trafficMeta");
+            $(
+                "trafficMeta"
+            );
 
         if (meta) {
             meta.textContent =
-                `${formatNumber(metrics.packets)} packets · ${formatBytes(metrics.bytes)} · AVG ${formatBytes(metrics.averagePacketSize)}`;
+                `${formatNumber(
+                    metrics.packets
+                )} packets · ${formatBytes(
+                    metrics.bytes
+                )} · AVG ${formatBytes(
+                    metrics.averagePacketSize
+                )}`;
         }
     }
 
 
     /* ============================================================
        SEVERITY RENDERING
-       ============================================================ */
+    ============================================================ */
 
     function renderSeverity() {
         const alerts =
@@ -1135,13 +1444,9 @@
                 alerts
             );
 
-        /*
-         * Use backend severity totals only
-         * when there are no locally loaded alerts.
-         */
-
         if (
-            alerts.length === 0
+            alerts.length ===
+            0
         ) {
             const backend =
                 severityFromAnalytics();
@@ -1153,7 +1458,8 @@
                 backend.LOW;
 
             if (
-                backendTotal > 0
+                backendTotal >
+                0
             ) {
                 severity =
                     backend;
@@ -1219,7 +1525,9 @@
         bars.forEach(
             ([id, value]) => {
                 const element =
-                    $(id);
+                    $(
+                        id
+                    );
 
                 if (!element) {
                     return;
@@ -1229,7 +1537,8 @@
                     (
                         value /
                         total
-                    ) * 100;
+                    ) *
+                    100;
 
                 element.style.width =
                     `${Math.max(
@@ -1245,20 +1554,24 @@
 
     /* ============================================================
        IP TABLE
-       ============================================================ */
+    ============================================================ */
 
     function renderIpTable(
         bodyId,
         rows
     ) {
         const body =
-            $(bodyId);
+            $(
+                bodyId
+            );
 
         if (!body) {
             return;
         }
 
-        if (!rows.length) {
+        if (
+            !rows.length
+        ) {
             body.innerHTML = `
                 <tr class="empty-row">
                     <td colspan="3">
@@ -1273,10 +1586,16 @@
         body.innerHTML =
             rows
                 .map(
-                    (row, index) => `
+                    (
+                        row,
+                        index
+                    ) => `
                         <tr>
                             <td>
-                                ${index + 1}
+                                ${
+                                    index +
+                                    1
+                                }
                             </td>
 
                             <td>
@@ -1295,7 +1614,9 @@
                         </tr>
                     `
                 )
-                .join("");
+                .join(
+                    ""
+                );
     }
 
 
@@ -1323,9 +1644,11 @@
 
     /* ============================================================
        HTML ESCAPING
-       ============================================================ */
+    ============================================================ */
 
-    function escapeHtml(value) {
+    function escapeHtml(
+        value
+    ) {
         return String(
             value ?? ""
         )
@@ -1354,7 +1677,7 @@
 
     /* ============================================================
        CANVAS SETUP
-       ============================================================ */
+    ============================================================ */
 
     function setupCanvas(
         canvas
@@ -1387,10 +1710,12 @@
             1;
 
         canvas.width =
-            width * ratio;
+            width *
+            ratio;
 
         canvas.height =
-            height * ratio;
+            height *
+            ratio;
 
         const context =
             canvas.getContext(
@@ -1420,11 +1745,13 @@
 
     /* ============================================================
        TRAFFIC CHART
-       ============================================================ */
+    ============================================================ */
 
     function drawTrafficChart() {
         const canvas =
-            $("trafficAnalyticsChart");
+            $(
+                "trafficAnalyticsChart"
+            );
 
         if (!canvas) {
             return;
@@ -1453,32 +1780,39 @@
         );
 
         const padding = {
-            left: 48,
-            right: 18,
-            top: 20,
-            bottom: 34
+            left: 52,
+            right: 26,
+            top: 28,
+            bottom: 38
         };
 
         const graphWidth =
-            width -
-            padding.left -
-            padding.right;
+            Math.max(
+                1,
+                width -
+                padding.left -
+                padding.right
+            );
 
         const graphHeight =
-            height -
-            padding.top -
-            padding.bottom;
+            Math.max(
+                1,
+                height -
+                padding.top -
+                padding.bottom
+            );
 
-        /*
-         * Live samples take priority once available.
-         */
 
-        let points =
-            state.liveHistory.length >= 2
-                ? state.liveHistory.slice()
-                : state.historicalHistory.slice();
+        /* ========================================================
+           DATA
+        ======================================================== */
 
-        if (!points.length) {
+        const points =
+            buildRollingTrafficHistory();
+
+        if (
+            !points.length
+        ) {
             drawEmptyCanvas(
                 context,
                 width,
@@ -1489,15 +1823,87 @@
             return;
         }
 
-        const maxValue =
+
+        const values =
+            points.map(
+                point =>
+                    number(
+                        point.packets
+                    )
+            );
+
+        const rawMin =
+            Math.min(
+                ...values
+            );
+
+        const rawMax =
+            Math.max(
+                ...values
+            );
+
+
+        /* ========================================================
+           DYNAMIC Y AXIS
+        ======================================================== */
+
+        let minValue =
+            Math.floor(
+                rawMin
+            );
+
+        let maxValue =
+            Math.ceil(
+                rawMax
+            );
+
+        if (
+            maxValue ===
+            minValue
+        ) {
+            minValue =
+                Math.max(
+                    0,
+                    minValue -
+                    2
+                );
+
+            maxValue =
+                maxValue +
+                2;
+        }
+
+        else {
+            const spread =
+                Math.max(
+                    1,
+                    maxValue -
+                    minValue
+                );
+
+            minValue =
+                Math.max(
+                    0,
+                    Math.floor(
+                        minValue -
+                        spread *
+                        0.20
+                    )
+                );
+
+            maxValue =
+                Math.ceil(
+                    maxValue +
+                    spread *
+                    0.20
+                );
+        }
+
+        const valueSpan =
             Math.max(
                 1,
-                ...points.map(
-                    point =>
-                        number(
-                            point.packets
-                        )
-                )
+                maxValue -
+                minValue
             );
 
         const minTime =
@@ -1505,37 +1911,44 @@
 
         const maxTime =
             points[
-                points.length - 1
+                points.length -
+                1
             ].time;
 
         const timeSpan =
             Math.max(
-                1000,
+                GRAPH_SAMPLE_INTERVAL,
                 maxTime -
-                    minTime
+                minTime
             );
 
 
         /* ========================================================
            GRID
-           ======================================================== */
+        ======================================================== */
 
         context.save();
 
-        context.lineWidth = 1;
+        context.lineWidth =
+            1;
+
+        const gridRows =
+            5;
 
         for (
             let i = 0;
-            i <= 4;
+            i <= gridRows;
             i++
         ) {
+            const ratio =
+                i /
+                gridRows;
+
             const y =
                 padding.top +
                 graphHeight -
-                (
-                    i / 4
-                ) *
-                    graphHeight;
+                ratio *
+                graphHeight;
 
             context.beginPath();
 
@@ -1546,14 +1959,19 @@
 
             context.lineTo(
                 width -
-                    padding.right,
+                padding.right,
                 y
             );
 
             context.strokeStyle =
-                "rgba(255,255,255,0.08)";
+                "rgba(255,255,255,0.075)";
 
             context.stroke();
+
+            const value =
+                minValue +
+                ratio *
+                valueSpan;
 
             context.fillStyle =
                 "rgba(255,255,255,0.55)";
@@ -1563,11 +1981,7 @@
 
             context.fillText(
                 formatRate(
-                    (
-                        maxValue /
-                        4
-                    ) *
-                    i
+                    value
                 ),
                 8,
                 y + 4
@@ -1576,15 +1990,52 @@
 
 
         /* ========================================================
-           AREA
-           ======================================================== */
+           VERTICAL GRID
+        ======================================================== */
 
-        if (
-            points.length >= 2
+        const verticalLines =
+            6;
+
+        for (
+            let i = 0;
+            i <= verticalLines;
+            i++
         ) {
+            const ratio =
+                i /
+                verticalLines;
+
+            const x =
+                padding.left +
+                ratio *
+                graphWidth;
+
             context.beginPath();
 
-            points.forEach(
+            context.moveTo(
+                x,
+                padding.top
+            );
+
+            context.lineTo(
+                x,
+                padding.top +
+                graphHeight
+            );
+
+            context.strokeStyle =
+                "rgba(255,255,255,0.035)";
+
+            context.stroke();
+        }
+
+
+        /* ========================================================
+           COORDINATES
+        ======================================================== */
+
+        const coordinates =
+            points.map(
                 point => {
                     const x =
                         padding.left +
@@ -1595,123 +2046,308 @@
                             ) /
                             timeSpan
                         ) *
-                            graphWidth;
+                        graphWidth;
+
+                    const normalized =
+                        (
+                            number(
+                                point.packets
+                            ) -
+                            minValue
+                        ) /
+                        valueSpan;
 
                     const y =
                         padding.top +
                         graphHeight -
-                        (
-                            number(
-                                point.packets
-                            ) /
-                            maxValue
-                        ) *
-                            graphHeight;
+                        normalized *
+                        graphHeight;
 
-                    context.lineTo(
+                    return {
                         x,
                         y
-                    );
+                    };
                 }
             );
 
-            const last =
-                points[
-                    points.length - 1
-                ];
 
-            const lastX =
-                padding.left +
-                (
-                    (
-                        last.time -
-                        minTime
-                    ) /
-                    timeSpan
-                ) *
-                    graphWidth;
+        /* ========================================================
+           AREA
+        ======================================================== */
 
-            context.lineTo(
-                lastX,
+        if (
+            coordinates.length >=
+            2
+        ) {
+            context.beginPath();
+
+            context.moveTo(
+                coordinates[0].x,
                 padding.top +
-                    graphHeight
+                graphHeight
             );
 
-            const firstX =
-                padding.left;
+            context.lineTo(
+                coordinates[0].x,
+                coordinates[0].y
+            );
+
+            for (
+                let i = 1;
+                i <
+                coordinates.length;
+                i++
+            ) {
+                const previous =
+                    coordinates[
+                        i - 1
+                    ];
+
+                const current =
+                    coordinates[
+                        i
+                    ];
+
+                const middleX =
+                    (
+                        previous.x +
+                        current.x
+                    ) /
+                    2;
+
+                context.quadraticCurveTo(
+                    middleX,
+                    previous.y,
+                    current.x,
+                    current.y
+                );
+            }
+
+            const last =
+                coordinates[
+                    coordinates.length -
+                    1
+                ];
 
             context.lineTo(
-                firstX,
+                last.x,
                 padding.top +
-                    graphHeight
+                graphHeight
             );
 
             context.closePath();
 
             context.fillStyle =
-                "rgba(53,230,255,0.08)";
+                "rgba(53,230,255,0.075)";
 
             context.fill();
         }
 
 
         /* ========================================================
-           LINE
-           ======================================================== */
+           MAIN LINE
+        ======================================================== */
 
         context.beginPath();
 
-        points.forEach(
-            (point, index) => {
-                const x =
-                    padding.left +
-                    (
-                        (
-                            point.time -
-                            minTime
-                        ) /
-                        timeSpan
-                    ) *
-                        graphWidth;
-
-                const y =
-                    padding.top +
-                    graphHeight -
-                    (
-                        number(
-                            point.packets
-                        ) /
-                        maxValue
-                    ) *
-                        graphHeight;
-
+        coordinates.forEach(
+            (
+                point,
+                index
+            ) => {
                 if (
-                    index === 0
+                    index ===
+                    0
                 ) {
                     context.moveTo(
-                        x,
-                        y
+                        point.x,
+                        point.y
                     );
-                } else {
-                    context.lineTo(
-                        x,
-                        y
-                    );
+
+                    return;
                 }
+
+                const previous =
+                    coordinates[
+                        index -
+                        1
+                    ];
+
+                const middleX =
+                    (
+                        previous.x +
+                        point.x
+                    ) /
+                    2;
+
+                context.quadraticCurveTo(
+                    middleX,
+                    previous.y,
+                    point.x,
+                    point.y
+                );
             }
         );
 
         context.strokeStyle =
             "#35e6ff";
 
-        context.lineWidth = 2;
+        context.lineWidth =
+            2.8;
+
+        context.lineJoin =
+            "round";
+
+        context.lineCap =
+            "round";
+
+        context.shadowColor =
+            "#35e6ff";
+
+        context.shadowBlur =
+            8;
 
         context.stroke();
+
+        context.shadowBlur =
+            0;
+
+
+        /* ========================================================
+           DATA POINTS
+        ======================================================== */
+
+        coordinates.forEach(
+            (
+                point,
+                index
+            ) => {
+                if (
+                    index %
+                    2 !==
+                    0 &&
+                    index !==
+                    coordinates.length -
+                    1
+                ) {
+                    return;
+                }
+
+                context.beginPath();
+
+                context.arc(
+                    point.x,
+                    point.y,
+                    2.2,
+                    0,
+                    Math.PI *
+                    2
+                );
+
+                context.fillStyle =
+                    "#35e6ff";
+
+                context.shadowColor =
+                    "#35e6ff";
+
+                context.shadowBlur =
+                    8;
+
+                context.fill();
+
+                context.shadowBlur =
+                    0;
+            }
+        );
+
+
+        /* ========================================================
+           CURRENT POINT
+        ======================================================== */
+
+        const latest =
+            points[
+                points.length -
+                1
+            ];
+
+        const latestPoint =
+            coordinates[
+                coordinates.length -
+                1
+            ];
+
+        if (
+            latest &&
+            latestPoint
+        ) {
+            context.beginPath();
+
+            context.arc(
+                latestPoint.x,
+                latestPoint.y,
+                5,
+                0,
+                Math.PI *
+                2
+            );
+
+            context.fillStyle =
+                "#35e6ff";
+
+            context.shadowColor =
+                "#35e6ff";
+
+            context.shadowBlur =
+                15;
+
+            context.fill();
+
+            context.shadowBlur =
+                0;
+
+            /*
+             * Show the actual backend PPS value
+             * beside the live point instead of assuming
+             * the current second alone represents the
+             * current traffic rate.
+             */
+
+            const livePps =
+                number(
+                    state.stats?.traffic_rate_pps,
+                    number(
+                        latest.packets
+                    )
+                );
+
+            context.fillStyle =
+                "rgba(255,255,255,0.85)";
+
+            context.font =
+                "700 10px system-ui";
+
+            context.textAlign =
+                "right";
+
+            context.fillText(
+                `${formatRate(
+                    livePps
+                )} PPS`,
+                latestPoint.x -
+                9,
+                latestPoint.y -
+                11
+            );
+
+            context.textAlign =
+                "left";
+        }
 
 
         /* ========================================================
            X AXIS
-           ======================================================== */
+        ======================================================== */
 
         context.fillStyle =
             "rgba(255,255,255,0.45)";
@@ -1719,7 +2355,8 @@
         context.font =
             "10px system-ui";
 
-        const labels = 5;
+        const labels =
+            5;
 
         for (
             let i = 0;
@@ -1727,17 +2364,18 @@
             i++
         ) {
             const ratio =
-                i / labels;
+                i /
+                labels;
 
             const x =
                 padding.left +
                 ratio *
-                    graphWidth;
+                graphWidth;
 
             const timestamp =
                 minTime +
                 ratio *
-                    timeSpan;
+                timeSpan;
 
             const date =
                 new Date(
@@ -1750,8 +2388,10 @@
                     {
                         hour:
                             "2-digit",
+
                         minute:
                             "2-digit",
+
                         second:
                             "2-digit"
                     }
@@ -1763,9 +2403,40 @@
                     0,
                     x - 28
                 ),
-                height - 10
+                height -
+                10
             );
         }
+
+
+        /* ========================================================
+           GRAPH TITLES
+        ======================================================== */
+
+        context.fillStyle =
+            "rgba(255,255,255,0.35)";
+
+        context.font =
+            "700 9px system-ui";
+
+        context.fillText(
+            "PACKETS / SECOND",
+            padding.left,
+            13
+        );
+
+        context.textAlign =
+            "right";
+
+        context.fillText(
+            "LIVE · LAST 60 SEC",
+            width -
+            padding.right,
+            13
+        );
+
+        context.textAlign =
+            "left";
 
         context.restore();
     }
@@ -1773,7 +2444,7 @@
 
     /* ============================================================
        EMPTY CANVAS
-       ============================================================ */
+    ============================================================ */
 
     function drawEmptyCanvas(
         context,
@@ -1810,11 +2481,13 @@
 
     /* ============================================================
        PROTOCOL DONUT
-       ============================================================ */
+    ============================================================ */
 
     function drawProtocolChart() {
         const canvas =
-            $("protocolAnalyticsChart");
+            $(
+                "protocolAnalyticsChart"
+            );
 
         if (!canvas) {
             return;
@@ -1854,13 +2527,18 @@
             Object.values(
                 protocols
             ).reduce(
-                (sum, value) =>
-                    sum + value,
+                (
+                    sum,
+                    value
+                ) =>
+                    sum +
+                    value,
                 0
             );
 
         if (
-            totalPackets === 0
+            totalPackets ===
+            0
         ) {
             protocols =
                 protocolFromAnalytics();
@@ -1873,8 +2551,14 @@
 
         const total =
             entries.reduce(
-                (sum, [, value]) =>
-                    sum + number(value),
+                (
+                    sum,
+                    [, value]
+                ) =>
+                    sum +
+                    number(
+                        value
+                    ),
                 0
             );
 
@@ -1909,7 +2593,8 @@
             0.35;
 
         const innerRadius =
-            radius * 0.60;
+            radius *
+            0.60;
 
         let angle =
             -Math.PI / 2;
@@ -1930,7 +2615,8 @@
                     );
 
                 if (
-                    value <= 0
+                    value <=
+                    0
                 ) {
                     return;
                 }
@@ -1950,14 +2636,16 @@
                     centerY,
                     radius,
                     angle,
-                    angle + slice
+                    angle +
+                    slice
                 );
 
                 context.arc(
                     centerX,
                     centerY,
                     innerRadius,
-                    angle + slice,
+                    angle +
+                    slice,
                     angle,
                     true
                 );
@@ -1971,7 +2659,8 @@
 
                 context.fill();
 
-                angle += slice;
+                angle +=
+                    slice;
             }
         );
 
@@ -2016,7 +2705,9 @@
     function protocolColor(
         protocol
     ) {
-        switch (protocol) {
+        switch (
+            protocol
+        ) {
             case "TCP":
                 return "#35e6ff";
 
@@ -2039,7 +2730,9 @@
         protocols
     ) {
         const container =
-            $("protocolLegend");
+            $(
+                "protocolLegend"
+            );
 
         if (!container) {
             return;
@@ -2050,7 +2743,12 @@
                 protocols
             )
                 .map(
-                    ([protocol, value]) => `
+                    (
+                        [
+                            protocol,
+                            value
+                        ]
+                    ) => `
                         <div class="protocol-item">
                             <span
                                 class="protocol-dot"
@@ -2075,17 +2773,21 @@
                         </div>
                     `
                 )
-                .join("");
+                .join(
+                    ""
+                );
     }
 
 
     /* ============================================================
        REFRESH AGE
-       ============================================================ */
+    ============================================================ */
 
     function renderRefreshAge() {
         const element =
-            $("refreshAge");
+            $(
+                "refreshAge"
+            );
 
         if (!element) {
             return;
@@ -2104,12 +2806,13 @@
             Math.max(
                 0,
                 Date.now() -
-                    state.lastUpdate
+                state.lastUpdate
             );
 
         const seconds =
             Math.floor(
-                elapsed / 1000
+                elapsed /
+                1000
             );
 
         if (
@@ -2128,7 +2831,7 @@
 
     /* ============================================================
        LIVE STATUS
-       ============================================================ */
+    ============================================================ */
 
     function renderLiveStatus() {
         const elements =
@@ -2147,7 +2850,7 @@
 
     /* ============================================================
        RANGE BUTTONS
-       ============================================================ */
+    ============================================================ */
 
     function setRange(
         range
@@ -2164,7 +2867,8 @@
                 range
             )
         ) {
-            range = "5m";
+            range =
+                "5m";
         }
 
         state.range =
@@ -2179,7 +2883,7 @@
                     button.classList.toggle(
                         "active",
                         button.dataset.range ===
-                            range
+                        range
                     );
                 }
             );
@@ -2213,7 +2917,9 @@
                             text === "ALL"
                         );
 
-                    if (matches) {
+                    if (
+                        matches
+                    ) {
                         button.classList.add(
                             "active"
                         );
@@ -2226,18 +2932,14 @@
                 getRangeTraffic()
             );
 
-        /*
-         * Reset live history when changing
-         * time windows so the chart doesn't
-         * mix incompatible ranges.
-         */
-
-        state.liveHistory = [];
-
         drawTrafficChart();
+
         drawProtocolChart();
+
         renderKpis();
+
         renderSeverity();
+
         renderIpAnalytics();
     }
 
@@ -2287,21 +2989,27 @@
                                     setRange(
                                         "5m"
                                     );
-                                } else if (
+                                }
+
+                                else if (
                                     text ===
                                     "15 MIN"
                                 ) {
                                     setRange(
                                         "15m"
                                     );
-                                } else if (
+                                }
+
+                                else if (
                                     text ===
                                     "1 HOUR"
                                 ) {
                                     setRange(
                                         "1h"
                                     );
-                                } else {
+                                }
+
+                                else {
                                     setRange(
                                         "all"
                                     );
@@ -2316,7 +3024,7 @@
 
     /* ============================================================
        LOAD BACKEND DATA
-       ============================================================ */
+    ============================================================ */
 
     async function loadData() {
         if (
@@ -2362,12 +3070,13 @@
                 devicesResult,
                 trafficResult,
                 alertsResult
-            ] = results;
+            ] =
+                results;
 
 
             /* ====================================================
                ANALYTICS
-               ==================================================== */
+            ==================================================== */
 
             if (
                 analyticsResult.status ===
@@ -2376,7 +3085,9 @@
                 state.analytics =
                     analyticsResult.value ||
                     {};
-            } else {
+            }
+
+            else {
                 console.warn(
                     "Analytics API failed:",
                     analyticsResult.reason
@@ -2386,7 +3097,7 @@
 
             /* ====================================================
                STATS
-               ==================================================== */
+            ==================================================== */
 
             if (
                 statsResult.status ===
@@ -2395,7 +3106,9 @@
                 state.stats =
                     statsResult.value ||
                     {};
-            } else {
+            }
+
+            else {
                 console.warn(
                     "Stats API failed:",
                     statsResult.reason
@@ -2405,7 +3118,7 @@
 
             /* ====================================================
                DEVICES
-               ==================================================== */
+            ==================================================== */
 
             if (
                 devicesResult.status ===
@@ -2417,7 +3130,9 @@
                     )
                         ? devicesResult.value
                         : [];
-            } else {
+            }
+
+            else {
                 console.warn(
                     "Devices API failed:",
                     devicesResult.reason
@@ -2427,7 +3142,7 @@
 
             /* ====================================================
                TRAFFIC
-               ==================================================== */
+            ==================================================== */
 
             if (
                 trafficResult.status ===
@@ -2439,7 +3154,9 @@
                     )
                         ? trafficResult.value
                         : [];
-            } else {
+            }
+
+            else {
                 console.warn(
                     "Traffic API failed:",
                     trafficResult.reason
@@ -2449,7 +3166,7 @@
 
             /* ====================================================
                ALERTS
-               ==================================================== */
+            ==================================================== */
 
             if (
                 alertsResult.status ===
@@ -2465,25 +3182,33 @@
                 ) {
                     state.alerts =
                         value;
-                } else if (
+                }
+
+                else if (
                     Array.isArray(
                         value?.alerts
                     )
                 ) {
                     state.alerts =
                         value.alerts;
-                } else if (
+                }
+
+                else if (
                     Array.isArray(
                         value?.data
                     )
                 ) {
                     state.alerts =
                         value.data;
-                } else {
+                }
+
+                else {
                     state.alerts =
                         [];
                 }
-            } else {
+            }
+
+            else {
                 console.warn(
                     "Alerts API failed:",
                     alertsResult.reason
@@ -2493,7 +3218,7 @@
 
             /* ====================================================
                LAST TRAFFIC ID
-               ==================================================== */
+            ==================================================== */
 
             if (
                 state.traffic.length
@@ -2508,10 +3233,13 @@
                         )
                         .filter(
                             id =>
-                                id > 0
+                                id >
+                                0
                         );
 
-                if (ids.length) {
+                if (
+                    ids.length
+                ) {
                     state.lastTrafficId =
                         Math.max(
                             state.lastTrafficId,
@@ -2522,8 +3250,8 @@
 
 
             /* ====================================================
-               INITIAL HISTORY
-               ==================================================== */
+               HISTORICAL HISTORY
+            ==================================================== */
 
             state.historicalHistory =
                 buildHistoricalHistory(
@@ -2550,7 +3278,9 @@
                 );
             }
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.error(
                 "NETSENTINEL analytics:",
                 error
@@ -2560,8 +3290,9 @@
                 error.message ||
                 "Analytics data could not be loaded."
             );
+        }
 
-        } finally {
+        finally {
             state.loading =
                 false;
         }
@@ -2570,13 +3301,13 @@
 
     /* ============================================================
        LIVE TRAFFIC POLLING
-       ============================================================ */
+    ============================================================ */
 
     async function pollLiveTraffic() {
         try {
             const traffic =
                 await api(
-                    "/api/traffic?limit=500"
+                    "/api/traffic?limit=1000"
                 );
 
             if (
@@ -2601,7 +3332,8 @@
                         );
 
                     if (
-                        id > newestId
+                        id >
+                        newestId
                     ) {
                         newestId =
                             id;
@@ -2613,24 +3345,31 @@
                 newestId;
 
             /*
-             * Timestamp bug is fixed in parseTime(),
-             * so this now correctly identifies packets
-             * captured during the previous second.
+             * Rebuild the rolling graph from actual
+             * traffic timestamps.
              */
 
-            collectLiveSample();
+            state.liveHistory =
+                buildRollingTrafficHistory();
 
             state.lastUpdate =
                 Date.now();
 
             renderKpis();
+
             renderIpAnalytics();
+
             drawTrafficChart();
+
             drawProtocolChart();
+
             renderRefreshAge();
+
             renderLiveStatus();
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.warn(
                 "Live traffic update failed:",
                 error
@@ -2641,7 +3380,7 @@
 
     /* ============================================================
        LIVE POLLING
-       ============================================================ */
+    ============================================================ */
 
     function startLivePolling() {
         if (
@@ -2655,10 +3394,14 @@
         state.trafficTimer =
             setInterval(
                 pollLiveTraffic,
-                1000
+                GRAPH_SAMPLE_INTERVAL
             );
     }
 
+
+    /* ============================================================
+       BACKEND REFRESH POLLING
+    ============================================================ */
 
     function startRefreshPolling() {
         if (
@@ -2674,32 +3417,42 @@
                 async () => {
                     await loadData();
                 },
-                3000
+                5000
             );
     }
 
 
     /* ============================================================
        RENDER ALL
-       ============================================================ */
+    ============================================================ */
 
     function renderAll() {
+        state.liveHistory =
+            buildRollingTrafficHistory();
+
         renderKpis();
+
         renderSeverity();
+
         renderIpAnalytics();
+
         drawTrafficChart();
+
         drawProtocolChart();
+
         renderRefreshAge();
+
         renderLiveStatus();
     }
 
 
     /* ============================================================
        RESIZE
-       ============================================================ */
+    ============================================================ */
 
     function initResize() {
-        let timer = null;
+        let timer =
+            null;
 
         window.addEventListener(
             "resize",
@@ -2712,6 +3465,7 @@
                     setTimeout(
                         () => {
                             drawTrafficChart();
+
                             drawProtocolChart();
                         },
                         120
@@ -2723,7 +3477,7 @@
 
     /* ============================================================
        REFRESH AGE TIMER
-       ============================================================ */
+    ============================================================ */
 
     function startRefreshAgeTimer() {
         setInterval(
@@ -2735,7 +3489,7 @@
 
     /* ============================================================
        INITIALIZATION
-       ============================================================ */
+    ============================================================ */
 
     async function init() {
         if (
@@ -2757,15 +3511,15 @@
 
         startRefreshAgeTimer();
 
-        /*
-         * Don't call setRange() here because it clears
-         * live history before the first backend load.
-         */
-
         state.range =
             "5m";
 
         await loadData();
+
+        state.liveHistory =
+            buildRollingTrafficHistory();
+
+        drawTrafficChart();
 
         startLivePolling();
 
@@ -2779,7 +3533,7 @@
 
     /* ============================================================
        START
-       ============================================================ */
+    ============================================================ */
 
     if (
         document.readyState ===
@@ -2792,7 +3546,9 @@
                 once: true
             }
         );
-    } else {
+    }
+
+    else {
         init();
     }
 

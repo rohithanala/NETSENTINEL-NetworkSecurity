@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+
 from sqlalchemy import func, distinct
 
 from flask import (
@@ -15,6 +16,7 @@ from backend.models import (
     Device,
 )
 from backend.capture import get_manager
+from backend.client_identity import get_request_client_id
 
 
 api = Blueprint(
@@ -75,7 +77,10 @@ def is_local_or_private_ip(ip):
 
     ip = str(ip).strip().lower()
 
+    # --------------------------------------------------------
     # IPv6
+    # --------------------------------------------------------
+
     if ":" in ip:
         return (
             ip == "::1"
@@ -83,6 +88,10 @@ def is_local_or_private_ip(ip):
             or ip.startswith("fc")
             or ip.startswith("fd")
         )
+
+    # --------------------------------------------------------
+    # IPv4
+    # --------------------------------------------------------
 
     parts = ip.split(".")
 
@@ -194,12 +203,37 @@ def protocol_distribution_from_rows(rows):
     return distribution
 
 
+def get_client_id():
+    """
+    Return the client namespace associated with this request.
+
+    The browser/sensor sends the value using:
+
+        X-NETSENTINEL-CLIENT-ID
+
+    Query-string fallback is supported by client_identity.py.
+    """
+
+    return get_request_client_id()
+
+
+def client_filter(model):
+    """
+    Return the SQLAlchemy ownership filter for a telemetry model.
+
+    Every telemetry record must belong to exactly one client.
+    """
+
+    return model.client_id == get_client_id()
+
+
 # ============================================================
 # HEALTH
 # ============================================================
 
 @api.get("/health")
 def health():
+
     return jsonify(
         ok=True,
         service="NETSENTINEL",
@@ -212,19 +246,31 @@ def health():
 
 @api.get("/capture/status")
 def capture_status():
+
+    client_id = get_client_id()
+
     manager = get_manager(
-        current_app
+        current_app,
+        client_id=client_id,
     )
 
+    result = manager.status()
+
+    result["client_id"] = client_id
+
     return jsonify(
-        manager.status()
+        result
     )
 
 
 @api.post("/capture/start")
 def capture_start():
+
+    client_id = get_client_id()
+
     manager = get_manager(
-        current_app
+        current_app,
+        client_id=client_id,
     )
 
     payload = (
@@ -238,21 +284,34 @@ def capture_start():
         "interface"
     )
 
+    result = manager.start(
+        interface=interface,
+        client_id=client_id,
+    )
+
+    result["client_id"] = client_id
+
     return jsonify(
-        manager.start(
-            interface
-        )
+        result
     )
 
 
 @api.post("/capture/stop")
 def capture_stop():
+
+    client_id = get_client_id()
+
     manager = get_manager(
-        current_app
+        current_app,
+        client_id=client_id,
     )
 
+    result = manager.stop()
+
+    result["client_id"] = client_id
+
     return jsonify(
-        manager.stop()
+        result
     )
 
 
@@ -277,6 +336,8 @@ def traffic():
         1000,
     )
 
+    client_id = get_client_id()
+
     rows = (
         db.session.query(
             Traffic.id,
@@ -289,6 +350,11 @@ def traffic():
             Traffic.packet_size,
             Traffic.tcp_flags,
             Traffic.interface,
+            Traffic.client_id,
+            Traffic.is_demo,
+        )
+        .filter(
+            Traffic.client_id == client_id
         )
         .order_by(
             Traffic.timestamp.desc()
@@ -300,6 +366,7 @@ def traffic():
     records = []
 
     for row in rows:
+
         records.append(
             {
                 "id": row.id,
@@ -318,6 +385,10 @@ def traffic():
                 ),
                 "tcp_flags": row.tcp_flags,
                 "interface": row.interface,
+                "client_id": row.client_id,
+                "is_demo": bool(
+                    row.is_demo
+                ),
             }
         )
 
@@ -347,6 +418,8 @@ def alerts():
         500,
     )
 
+    client_id = get_client_id()
+
     rows = (
         db.session.query(
             Alert.id,
@@ -359,6 +432,11 @@ def alerts():
             Alert.confidence,
             Alert.description,
             Alert.status,
+            Alert.client_id,
+            Alert.is_demo,
+        )
+        .filter(
+            Alert.client_id == client_id
         )
         .order_by(
             Alert.timestamp.desc()
@@ -370,6 +448,7 @@ def alerts():
     records = []
 
     for row in rows:
+
         records.append(
             {
                 "id": row.id,
@@ -386,6 +465,10 @@ def alerts():
                 "confidence": row.confidence,
                 "description": row.description,
                 "status": row.status,
+                "client_id": row.client_id,
+                "is_demo": bool(
+                    row.is_demo
+                ),
             }
         )
 
@@ -401,15 +484,23 @@ def alerts():
 @api.get("/devices")
 def devices():
 
+    client_id = get_client_id()
+
     rows = (
         db.session.query(
             Device.id,
             Device.ip_address,
             Device.mac_address,
             Device.hostname,
+            Device.first_seen,
             Device.last_seen,
             Device.packet_count,
             Device.status,
+            Device.client_id,
+            Device.is_demo,
+        )
+        .filter(
+            Device.client_id == client_id
         )
         .order_by(
             Device.last_seen.desc()
@@ -421,12 +512,16 @@ def devices():
     records = []
 
     for row in rows:
+
         records.append(
             {
                 "id": row.id,
                 "ip_address": row.ip_address,
                 "mac_address": row.mac_address,
                 "hostname": row.hostname,
+                "first_seen": iso(
+                    row.first_seen
+                ),
                 "last_seen": iso(
                     row.last_seen
                 ),
@@ -434,6 +529,10 @@ def devices():
                     row.packet_count or 0
                 ),
                 "status": row.status,
+                "client_id": row.client_id,
+                "is_demo": bool(
+                    row.is_demo
+                ),
             }
         )
 
@@ -451,12 +550,15 @@ def stats():
     """
     Optimized real-time statistics.
 
-    Heavy calculations are delegated to SQLite instead of
-    loading thousands of ORM objects into Python.
+    Statistics are calculated only from telemetry belonging
+    to the requesting NETSENTINEL client.
     """
 
+    client_id = get_client_id()
+
     manager = get_manager(
-        current_app
+        current_app,
+        client_id=client_id,
     )
 
     # --------------------------------------------------------
@@ -465,7 +567,12 @@ def stats():
 
     packets_captured = (
         db.session.query(
-            func.count(Traffic.id)
+            func.count(
+                Traffic.id
+            )
+        )
+        .filter(
+            Traffic.client_id == client_id
         )
         .scalar()
         or 0
@@ -481,14 +588,15 @@ def stats():
                 Traffic.timestamp
             )
         )
+        .filter(
+            Traffic.client_id == client_id
+        )
         .scalar()
     )
 
     # --------------------------------------------------------
     # ACTIVITY WINDOW
     # --------------------------------------------------------
-
-    recent_rows = []
 
     traffic_rate_pps = 0.0
     traffic_rate_bps = 0.0
@@ -531,6 +639,7 @@ def stats():
                 ),
             )
             .filter(
+                Traffic.client_id == client_id,
                 Traffic.timestamp >= cutoff,
                 Traffic.timestamp <= normalized_latest,
             )
@@ -557,6 +666,7 @@ def stats():
             first_time is not None
             and last_time is not None
         ):
+
             elapsed = (
                 last_time - first_time
             ).total_seconds()
@@ -581,24 +691,25 @@ def stats():
         # ACTIVE CONNECTIONS
         # ----------------------------------------------------
 
-        connection_rows = (
+        connection_count = (
             db.session.query(
                 Traffic.source_ip,
                 Traffic.destination_ip,
                 Traffic.destination_port,
             )
             .filter(
+                Traffic.client_id == client_id,
                 Traffic.timestamp >= cutoff,
                 Traffic.timestamp <= normalized_latest,
                 Traffic.source_ip.isnot(None),
                 Traffic.destination_ip.isnot(None),
             )
             .distinct()
-            .all()
+            .count()
         )
 
-        active_connections = len(
-            connection_rows
+        active_connections = int(
+            connection_count
         )
 
         # ----------------------------------------------------
@@ -611,6 +722,7 @@ def stats():
                 Traffic.destination_ip,
             )
             .filter(
+                Traffic.client_id == client_id,
                 Traffic.timestamp >= cutoff,
                 Traffic.timestamp <= normalized_latest,
             )
@@ -619,7 +731,10 @@ def stats():
 
         active_device_ips = set()
 
-        for source_ip, destination_ip in device_rows:
+        for (
+            source_ip,
+            destination_ip,
+        ) in device_rows:
 
             if (
                 source_ip
@@ -651,26 +766,36 @@ def stats():
 
     security_alerts = (
         db.session.query(
-            func.count(Alert.id)
+            func.count(
+                Alert.id
+            )
         )
         .filter(
-            Alert.status != "resolved"
+            Alert.client_id == client_id,
+            Alert.status != "resolved",
         )
         .scalar()
         or 0
     )
 
+    # --------------------------------------------------------
+    # THREATS DETECTED
+    # --------------------------------------------------------
+
     threats_detected = (
         db.session.query(
-            func.count(Alert.id)
+            func.count(
+                Alert.id
+            )
         )
         .filter(
+            Alert.client_id == client_id,
             Alert.severity.in_(
                 [
                     "HIGH",
                     "CRITICAL",
                 ]
-            )
+            ),
         )
         .scalar()
         or 0
@@ -688,8 +813,11 @@ def stats():
 
     configured_mode = str(
         current_app.config.get(
-            "MONITOR_MODE",
-            "LIVE",
+            "NETSENTINEL_MODE",
+            current_app.config.get(
+                "MONITOR_MODE",
+                "LIVE",
+            ),
         )
     ).upper()
 
@@ -699,6 +827,7 @@ def stats():
 
     return jsonify(
         {
+            "client_id": client_id,
             "packets_captured": int(
                 packets_captured
             ),
@@ -747,14 +876,21 @@ def stats():
 @api.patch("/alerts/<int:alert_id>")
 def update_alert(alert_id):
 
+    client_id = get_client_id()
+
     alert = (
-        db.session.get(
-            Alert,
-            alert_id,
+        db.session.query(
+            Alert
         )
+        .filter(
+            Alert.id == alert_id,
+            Alert.client_id == client_id,
+        )
+        .first()
     )
 
     if alert is None:
+
         return jsonify(
             {
                 "ok": False,
@@ -781,13 +917,16 @@ def update_alert(alert_id):
     }
 
     if status in allowed_statuses:
+
         alert.status = status
+
         db.session.commit()
 
     return jsonify(
         {
             "ok": True,
             "status": alert.status,
+            "client_id": client_id,
         }
     )
 
@@ -801,11 +940,11 @@ def analytics():
     """
     Optimized analytics endpoint.
 
-    The previous implementation loaded the complete Traffic
-    table into Python. This implementation performs aggregation
-    inside SQLite and only retrieves the small result sets that
-    are actually required.
+    All analytics are calculated only from the requesting
+    NETSENTINEL client's telemetry.
     """
+
+    client_id = get_client_id()
 
     # --------------------------------------------------------
     # TOTAL PACKETS
@@ -813,7 +952,12 @@ def analytics():
 
     total_packets = (
         db.session.query(
-            func.count(Traffic.id)
+            func.count(
+                Traffic.id
+            )
+        )
+        .filter(
+            Traffic.client_id == client_id
         )
         .scalar()
         or 0
@@ -826,7 +970,12 @@ def analytics():
     protocol_rows = (
         db.session.query(
             Traffic.protocol,
-            func.count(Traffic.id),
+            func.count(
+                Traffic.id
+            ),
+        )
+        .filter(
+            Traffic.client_id == client_id
         )
         .group_by(
             Traffic.protocol
@@ -846,7 +995,12 @@ def analytics():
 
     total_alerts = (
         db.session.query(
-            func.count(Alert.id)
+            func.count(
+                Alert.id
+            )
+        )
+        .filter(
+            Alert.client_id == client_id
         )
         .scalar()
         or 0
@@ -861,6 +1015,9 @@ def analytics():
             func.max(
                 Traffic.timestamp
             )
+        )
+        .filter(
+            Traffic.client_id == client_id
         )
         .scalar()
     )
@@ -886,13 +1043,17 @@ def analytics():
                 Traffic.destination_ip,
             )
             .filter(
+                Traffic.client_id == client_id,
                 Traffic.timestamp >= cutoff,
                 Traffic.timestamp <= normalized_latest,
             )
             .all()
         )
 
-        for source_ip, destination_ip in device_rows:
+        for (
+            source_ip,
+            destination_ip,
+        ) in device_rows:
 
             if (
                 source_ip
@@ -916,6 +1077,7 @@ def analytics():
 
     return jsonify(
         {
+            "client_id": client_id,
             "total_packets": int(
                 total_packets
             ),

@@ -1,13 +1,14 @@
 """
 NETSENTINEL — Database models.
 
-Three models match the spec exactly (Traffic, Alert, Device). A fourth,
-AppSetting, is added as a simple key-value store so that Settings and the
-LIVE/DEMO mode toggle persist across restarts.
+Traffic, Alert and Device records are separated by:
 
-Every table that stores traffic-derived data carries is_demo so Demo Mode
-and Live Mode data can coexist in the same database without contaminating
-each other's statistics.
+    1. client_id
+    2. is_demo
+
+This allows multiple NETSENTINEL users/sensors to have
+independent telemetry while keeping DEMO and LIVE data
+separated.
 """
 
 from datetime import datetime, timezone
@@ -18,12 +19,29 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
-def utcnow() -> datetime:
-    """Timezone-aware UTC now, used as a default for timestamp columns."""
-    return datetime.now(timezone.utc)
+# ============================================================
+# DEFAULTS
+# ============================================================
 
+DEFAULT_CLIENT_ID = "legacy"
+
+
+def utcnow() -> datetime:
+    """
+    Return the current UTC datetime.
+    """
+
+    return datetime.now(
+        timezone.utc
+    )
+
+
+# ============================================================
+# TRAFFIC
+# ============================================================
 
 class Traffic(db.Model):
+
     __tablename__ = "traffic"
 
     id = db.Column(
@@ -83,6 +101,21 @@ class Traffic(db.Model):
         nullable=True,
     )
 
+    # --------------------------------------------------------
+    # CLIENT OWNERSHIP
+    # --------------------------------------------------------
+
+    client_id = db.Column(
+        db.String(128),
+        nullable=False,
+        default=DEFAULT_CLIENT_ID,
+        index=True,
+    )
+
+    # --------------------------------------------------------
+    # DEMO / LIVE
+    # --------------------------------------------------------
+
     is_demo = db.Column(
         db.Boolean,
         nullable=False,
@@ -90,43 +123,75 @@ class Traffic(db.Model):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # INDEXES
+    # --------------------------------------------------------
+
     __table_args__ = (
+
         db.Index(
-            "ix_traffic_is_demo_timestamp",
+            "ix_traffic_client_demo_timestamp",
+            "client_id",
             "is_demo",
             "timestamp",
         ),
+
         db.Index(
-            "ix_traffic_protocol_is_demo",
+            "ix_traffic_protocol_client_demo",
             "protocol",
+            "client_id",
             "is_demo",
         ),
+
     )
 
+    # --------------------------------------------------------
+    # SERIALIZATION
+    # --------------------------------------------------------
+
     def to_dict(self) -> dict:
+
         return {
+
             "id": self.id,
+
             "timestamp": (
                 self.timestamp.isoformat()
                 if self.timestamp
                 else None
             ),
+
             "source_ip": self.source_ip,
+
             "destination_ip": self.destination_ip,
+
             "source_port": self.source_port,
+
             "destination_port": self.destination_port,
+
             "protocol": self.protocol,
+
             "packet_size": self.packet_size,
+
             "tcp_flags": self.tcp_flags,
+
             "interface": self.interface,
+
+            "client_id": self.client_id,
+
             "is_demo": self.is_demo,
+
         }
 
 
+# ============================================================
+# ALERT
+# ============================================================
+
 class Alert(db.Model):
+
     __tablename__ = "alerts"
 
-    # These constants are required by the capture/detection pipeline.
     VALID_SEVERITIES = (
         "LOW",
         "MEDIUM",
@@ -201,6 +266,21 @@ class Alert(db.Model):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # CLIENT OWNERSHIP
+    # --------------------------------------------------------
+
+    client_id = db.Column(
+        db.String(128),
+        nullable=False,
+        default=DEFAULT_CLIENT_ID,
+        index=True,
+    )
+
+    # --------------------------------------------------------
+    # DEMO / LIVE
+    # --------------------------------------------------------
+
     is_demo = db.Column(
         db.Boolean,
         nullable=False,
@@ -208,40 +288,73 @@ class Alert(db.Model):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # INDEXES
+    # --------------------------------------------------------
+
     __table_args__ = (
+
         db.Index(
-            "ix_alerts_is_demo_timestamp",
+            "ix_alerts_client_demo_timestamp",
+            "client_id",
             "is_demo",
             "timestamp",
         ),
+
         db.Index(
-            "ix_alerts_severity_is_demo",
+            "ix_alerts_severity_client_demo",
             "severity",
+            "client_id",
             "is_demo",
         ),
+
     )
 
+    # --------------------------------------------------------
+    # SERIALIZATION
+    # --------------------------------------------------------
+
     def to_dict(self) -> dict:
+
         return {
+
             "id": self.id,
+
             "timestamp": (
                 self.timestamp.isoformat()
                 if self.timestamp
                 else None
             ),
+
             "detection_type": self.detection_type,
+
             "source_ip": self.source_ip,
+
             "destination_ip": self.destination_ip,
+
             "protocol": self.protocol,
+
             "severity": self.severity,
+
             "confidence": self.confidence,
+
             "description": self.description,
+
             "status": self.status,
+
+            "client_id": self.client_id,
+
             "is_demo": self.is_demo,
+
         }
 
 
+# ============================================================
+# DEVICE
+# ============================================================
+
 class Device(db.Model):
+
     __tablename__ = "devices"
 
     VALID_STATUSES = (
@@ -298,6 +411,21 @@ class Device(db.Model):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # CLIENT OWNERSHIP
+    # --------------------------------------------------------
+
+    client_id = db.Column(
+        db.String(128),
+        nullable=False,
+        default=DEFAULT_CLIENT_ID,
+        index=True,
+    )
+
+    # --------------------------------------------------------
+    # DEMO / LIVE
+    # --------------------------------------------------------
+
     is_demo = db.Column(
         db.Boolean,
         nullable=False,
@@ -305,45 +433,74 @@ class Device(db.Model):
         index=True,
     )
 
+    # --------------------------------------------------------
+    # CONSTRAINTS / INDEXES
+    # --------------------------------------------------------
+
     __table_args__ = (
+
         db.UniqueConstraint(
             "ip_address",
+            "client_id",
             "is_demo",
-            name="uq_devices_ip_mode",
+            name="uq_devices_ip_client_mode",
         ),
+
         db.Index(
-            "ix_devices_is_demo_last_seen",
+            "ix_devices_client_demo_last_seen",
+            "client_id",
             "is_demo",
             "last_seen",
         ),
+
     )
 
+    # --------------------------------------------------------
+    # SERIALIZATION
+    # --------------------------------------------------------
+
     def to_dict(self) -> dict:
+
         return {
+
             "id": self.id,
+
             "ip_address": self.ip_address,
+
             "mac_address": self.mac_address,
+
             "hostname": self.hostname,
+
             "first_seen": (
                 self.first_seen.isoformat()
                 if self.first_seen
                 else None
             ),
+
             "last_seen": (
                 self.last_seen.isoformat()
                 if self.last_seen
                 else None
             ),
-            "packet_count": self.packet_count,
+
+            "packet_count": (
+                self.packet_count or 0
+            ),
+
             "status": self.status,
+
+            "client_id": self.client_id,
+
             "is_demo": self.is_demo,
+
         }
 
 
+# ============================================================
+# APP SETTINGS
+# ============================================================
+
 class AppSetting(db.Model):
-    """
-    Simple key-value store for persisted settings and current mode.
-    """
 
     __tablename__ = "app_settings"
 
@@ -358,7 +515,11 @@ class AppSetting(db.Model):
     )
 
     def to_dict(self) -> dict:
+
         return {
+
             "key": self.key,
+
             "value": self.value,
+
         }

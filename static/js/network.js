@@ -6,20 +6,16 @@
  * ============================================================
  * Real-time network topology renderer
  *
- * Features:
- * - Real devices
- * - Real traffic
- * - Real statistics
- * - Local / sensor / external topology
- * - Animated connections
- * - Moving packet particles
- * - Cyber grid
- * - Direction-aware IP labels
- * - Device inventory
- * - Search
- * - Status filtering
- * - Pause / resume
- * - Responsive canvas
+ * IMPORTANT:
+ * Device inventory = ACTIVE LOCAL DEVICES only.
+ *
+ * Active-device definition:
+ *   - private/local IP
+ *   - seen within the last 5 minutes
+ *
+ * Public Internet endpoints and multicast addresses are shown
+ * only as external traffic endpoints in the topology.
+ * They are NOT counted as physical devices.
  * ============================================================
  */
 
@@ -30,6 +26,8 @@
 const DEVICE_LIMIT = 500;
 const TRAFFIC_LIMIT = 500;
 const POLL_INTERVAL = 2500;
+
+const ACTIVE_DEVICE_WINDOW_MS = 5 * 60 * 1000;
 
 const MAX_LOCAL_NODES = 7;
 const MAX_EXTERNAL_NODES = 9;
@@ -212,14 +210,30 @@ function formatTime(timestamp) {
 }
 
 
+function timestampMs(timestamp) {
+    if (!timestamp) {
+        return null;
+    }
+
+    const value =
+        new Date(timestamp).getTime();
+
+    return Number.isFinite(value)
+        ? value
+        : null;
+}
+
+
 /* ============================================================
    IP CLASSIFICATION
 ============================================================ */
 
 function isIPv4(ip) {
-    const value = String(ip || "").trim();
+    const value =
+        String(ip || "").trim();
 
-    const parts = value.split(".");
+    const parts =
+        value.split(".");
 
     if (parts.length !== 4) {
         return false;
@@ -272,6 +286,13 @@ function isPrivateIPv4(ip) {
         return true;
     }
 
+    if (
+        parts[0] === 169 &&
+        parts[1] === 254
+    ) {
+        return true;
+    }
+
     return false;
 }
 
@@ -286,26 +307,111 @@ function isLocalAddress(ip) {
         return false;
     }
 
-    if (isPrivateIPv4(value)) {
-        return true;
-    }
-
     if (
-        value === "localhost" ||
-        value === "::1"
+        value ===
+        "localhost"
     ) {
         return true;
     }
 
     if (
-        value.startsWith("fe80:") ||
-        value.startsWith("fc") ||
-        value.startsWith("fd")
+        value ===
+        "::1"
+    ) {
+        return true;
+    }
+
+    if (
+        isPrivateIPv4(
+            value
+        )
+    ) {
+        return true;
+    }
+
+    if (
+        value.startsWith(
+            "fe80:"
+        )
+    ) {
+        return true;
+    }
+
+    if (
+        value.startsWith(
+            "fc"
+        )
+    ) {
+        return true;
+    }
+
+    if (
+        value.startsWith(
+            "fd"
+        )
     ) {
         return true;
     }
 
     return false;
+}
+
+
+function isMulticastAddress(ip) {
+    const value =
+        String(ip || "")
+            .toLowerCase()
+            .trim();
+
+    if (!value) {
+        return false;
+    }
+
+    if (
+        isIPv4(value)
+    ) {
+        const first =
+            Number(
+                value.split(".")[0]
+            );
+
+        return (
+            first >= 224 &&
+            first <= 239
+        );
+    }
+
+    if (
+        isIPv6(value)
+    ) {
+        return (
+            value.startsWith("ff")
+        );
+    }
+
+    return false;
+}
+
+
+function isUsableExternalEndpoint(ip) {
+    if (!ip) {
+        return false;
+    }
+
+    if (
+        isMulticastAddress(ip)
+    ) {
+        return false;
+    }
+
+    if (
+        String(ip) ===
+        "255.255.255.255"
+    ) {
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -317,15 +423,23 @@ function shortenIp(ip) {
         return value;
     }
 
-    if (value.includes(":")) {
+    if (
+        value.includes(":")
+    ) {
         const parts =
             value.split(":");
 
-        if (parts.length >= 5) {
+        if (
+            parts.length >= 5
+        ) {
             return (
-                parts.slice(0, 2).join(":") +
+                parts
+                    .slice(0, 2)
+                    .join(":") +
                 ":…" +
-                parts.slice(-2).join(":")
+                parts
+                    .slice(-2)
+                    .join(":")
             );
         }
     }
@@ -351,22 +465,28 @@ function normalizeStatus(device) {
             .toLowerCase();
 
     if (
-        status === "critical" ||
-        status === "danger"
+        status ===
+            "critical" ||
+        status ===
+            "danger"
     ) {
         return "CRITICAL";
     }
 
     if (
-        status === "suspicious" ||
-        status === "warning"
+        status ===
+            "suspicious" ||
+        status ===
+            "warning"
     ) {
         return "SUSPICIOUS";
     }
 
     if (
-        status === "inactive" ||
-        status === "offline"
+        status ===
+            "inactive" ||
+        status ===
+            "offline"
     ) {
         return "INACTIVE";
     }
@@ -419,6 +539,108 @@ async function fetchJSON(url) {
 
 
 /* ============================================================
+   ACTIVE DEVICE LOGIC
+============================================================ */
+
+/*
+ * Backend stats already defines active devices using the
+ * five-minute activity window.
+ *
+ * The Network page now follows the same concept:
+ *   - local/private IP only
+ *   - last_seen within five minutes
+ */
+
+function getActivityReferenceMs() {
+    const latest =
+        timestampMs(
+            stats?.last_packet_at
+        );
+
+    return latest ||
+        Date.now();
+}
+
+
+function isActiveDevice(device) {
+    const ip =
+        getIp(device);
+
+    if (
+        !ip ||
+        ip === "Unknown"
+    ) {
+        return false;
+    }
+
+    if (
+        !isLocalAddress(ip)
+    ) {
+        return false;
+    }
+
+    const lastSeen =
+        timestampMs(
+            device?.last_seen
+        );
+
+    if (
+        lastSeen === null
+    ) {
+        return false;
+    }
+
+    const reference =
+        getActivityReferenceMs();
+
+    const age =
+        Math.abs(
+            reference -
+            lastSeen
+        );
+
+    return (
+        age <=
+        ACTIVE_DEVICE_WINDOW_MS
+    );
+}
+
+
+function uniqueActiveLocalDevices() {
+    const map =
+        new Map();
+
+    for (
+        const device of devices
+    ) {
+        if (
+            !isActiveDevice(
+                device
+            )
+        ) {
+            continue;
+        }
+
+        const ip =
+            getIp(device);
+
+        if (
+            !map.has(ip)
+        ) {
+            map.set(
+                ip,
+                device
+            );
+        }
+    }
+
+    return Array.from(
+        map.values()
+    );
+}
+
+
+/* ============================================================
    STATISTICS
 ============================================================ */
 
@@ -443,23 +665,45 @@ function renderStats() {
             "ipv6Devices"
         );
 
+    const activeLocalDevices =
+        uniqueActiveLocalDevices();
+
     const ipv6Count =
-        devices.filter(
+        activeLocalDevices.filter(
             device =>
                 isIPv6(
                     getIp(device)
                 )
         ).length;
 
-    if (activeDevices) {
+    /*
+     * The backend is authoritative for the headline count.
+     * Fallback uses the same local active-device definition.
+     */
+
+    const activeCount =
+        Number.isFinite(
+            Number(
+                stats?.active_devices
+            )
+        )
+            ? num(
+                stats.active_devices
+            )
+            : activeLocalDevices.length;
+
+    if (
+        activeDevices
+    ) {
         activeDevices.textContent =
             formatNumber(
-                stats.active_devices ??
-                devices.length
+                activeCount
             );
     }
 
-    if (activeConnections) {
+    if (
+        activeConnections
+    ) {
         activeConnections.textContent =
             formatNumber(
                 stats.active_connections ??
@@ -467,7 +711,9 @@ function renderStats() {
             );
     }
 
-    if (packetsObserved) {
+    if (
+        packetsObserved
+    ) {
         packetsObserved.textContent =
             formatNumber(
                 stats.packets_captured ??
@@ -475,7 +721,9 @@ function renderStats() {
             );
     }
 
-    if (ipv6Devices) {
+    if (
+        ipv6Devices
+    ) {
         ipv6Devices.textContent =
             formatNumber(
                 ipv6Count
@@ -497,7 +745,9 @@ function renderSensorState() {
             capture.running
         );
 
-    if (sensorStatus) {
+    if (
+        sensorStatus
+    ) {
         sensorStatus.textContent =
             running
                 ? "CAPTURE ACTIVE"
@@ -509,7 +759,9 @@ function renderSensorState() {
                 : "#ff7373";
     }
 
-    if (interfaceName) {
+    if (
+        interfaceName
+    ) {
         const iface =
             stats.network_interface ||
             capture.interface ||
@@ -541,7 +793,10 @@ function filteredDevices() {
         )
             .toUpperCase();
 
-    return devices.filter(
+    const activeLocalDevices =
+        uniqueActiveLocalDevices();
+
+    return activeLocalDevices.filter(
         device => {
             const ip =
                 getIp(device);
@@ -568,8 +823,10 @@ function filteredDevices() {
                     .includes(search);
 
             const matchesStatus =
-                selectedStatus === "ALL" ||
-                status === selectedStatus;
+                selectedStatus ===
+                    "ALL" ||
+                status ===
+                    selectedStatus;
 
             return (
                 matchesSearch &&
@@ -585,30 +842,40 @@ function filteredDevices() {
 ============================================================ */
 
 function renderDevices() {
-    if (!deviceRows) {
+    if (
+        !deviceRows
+    ) {
         return;
     }
 
     const visible =
         filteredDevices();
 
-    if (inventoryCount) {
+    const totalActive =
+        uniqueActiveLocalDevices()
+            .length;
+
+    if (
+        inventoryCount
+    ) {
         inventoryCount.textContent =
-            `${visible.length} ${
-                visible.length === 1
+            `${totalActive} ${
+                totalActive === 1
                     ? "device"
                     : "devices"
             }`;
     }
 
-    if (!visible.length) {
+    if (
+        !visible.length
+    ) {
         deviceRows.innerHTML = `
             <tr>
                 <td
                     colspan="6"
                     class="empty-devices"
                 >
-                    No network devices match the current filter.
+                    No active network devices match the current filter.
                 </td>
             </tr>
         `;
@@ -710,7 +977,9 @@ function uniqueDevices() {
     const map =
         new Map();
 
-    for (const device of devices) {
+    for (
+        const device of devices
+    ) {
         const ip =
             getIp(device);
 
@@ -721,7 +990,9 @@ function uniqueDevices() {
             continue;
         }
 
-        if (!map.has(ip)) {
+        if (
+            !map.has(ip)
+        ) {
             map.set(
                 ip,
                 device
@@ -765,11 +1036,135 @@ function trafficScoreForIp(ip) {
 
 
 /* ============================================================
+   RECENT TRAFFIC
+============================================================ */
+
+function recentTrafficPackets() {
+    if (
+        !traffic.length
+    ) {
+        return [];
+    }
+
+    const reference =
+        timestampMs(
+            stats?.last_packet_at
+        ) ||
+        Date.now();
+
+    return traffic.filter(
+        packet => {
+            const timestamp =
+                timestampMs(
+                    packet?.timestamp
+                );
+
+            if (
+                timestamp === null
+            ) {
+                return false;
+            }
+
+            const age =
+                Math.abs(
+                    reference -
+                    timestamp
+                );
+
+            return (
+                age <=
+                ACTIVE_DEVICE_WINDOW_MS
+            );
+        }
+    );
+}
+
+
+/* ============================================================
+   EXTERNAL TRAFFIC ENDPOINTS
+============================================================ */
+
+/*
+ * External topology nodes now come from RECENT TRAFFIC,
+ * not from the historical Device table.
+ *
+ * This prevents old public IP addresses from becoming
+ * 189 "devices" on the Network page.
+ */
+
+function recentExternalEndpoints() {
+    const packets =
+        recentTrafficPackets();
+
+    const scores =
+        new Map();
+
+    for (
+        const packet of packets
+    ) {
+        const endpoints = [
+            packet?.source_ip,
+            packet?.destination_ip
+        ];
+
+        for (
+            const ip of endpoints
+        ) {
+            if (
+                !ip ||
+                isLocalAddress(ip) ||
+                !isUsableExternalEndpoint(ip)
+            ) {
+                continue;
+            }
+
+            const current =
+                scores.get(ip) || 0;
+
+            scores.set(
+                ip,
+                current +
+                num(
+                    packet?.packet_size
+                )
+            );
+        }
+    }
+
+    return Array.from(
+        scores.entries()
+    )
+        .sort(
+            (a, b) =>
+                b[1] -
+                a[1]
+        )
+        .slice(
+            0,
+            MAX_EXTERNAL_NODES
+        )
+        .map(
+            ([ip, score]) => ({
+                ip_address: ip,
+                hostname:
+                    "External endpoint",
+                packet_count: 0,
+                traffic_score: score,
+                status: "online",
+                is_extra: true
+            })
+        );
+}
+
+
+/* ============================================================
    TOPOLOGY DATA
 ============================================================ */
 
 function buildTopologyData() {
-    if (!canvas) {
+    if (
+        !canvas
+    ) {
         return;
     }
 
@@ -788,17 +1183,13 @@ function buildTopologyData() {
             400
         );
 
-    const all =
-        uniqueDevices();
+
+    /* ----------------------------------------------------------
+       ACTIVE LOCAL DEVICES
+    ---------------------------------------------------------- */
 
     const local =
-        all
-            .filter(
-                device =>
-                    isLocalAddress(
-                        getIp(device)
-                    )
-            )
+        uniqueActiveLocalDevices()
             .sort(
                 (a, b) =>
                     getPacketCount(b) -
@@ -809,114 +1200,13 @@ function buildTopologyData() {
                 MAX_LOCAL_NODES
             );
 
-    let external =
-        all
-            .filter(
-                device =>
-                    !isLocalAddress(
-                        getIp(device)
-                    )
-            )
-            .sort(
-                (a, b) =>
-                    trafficScoreForIp(
-                        getIp(b)
-                    ) -
-                    trafficScoreForIp(
-                        getIp(a)
-                    )
-            )
-            .slice(
-                0,
-                MAX_EXTERNAL_NODES
-            );
-
 
     /* ----------------------------------------------------------
-       EXTRA EXTERNAL TRAFFIC ENDPOINTS
+       RECENT EXTERNAL TRAFFIC
     ---------------------------------------------------------- */
 
-    const knownIps =
-        new Set(
-            all.map(
-                device =>
-                    getIp(device)
-            )
-        );
-
-    const externalTrafficIps =
-        new Map();
-
-    for (const packet of traffic) {
-        const source =
-            packet?.source_ip;
-
-        const destination =
-            packet?.destination_ip;
-
-        if (
-            source &&
-            !isLocalAddress(source) &&
-            !knownIps.has(source)
-        ) {
-            externalTrafficIps.set(
-                source,
-                (
-                    externalTrafficIps.get(
-                        source
-                    ) || 0
-                ) +
-                num(
-                    packet?.packet_size
-                )
-            );
-        }
-
-        if (
-            destination &&
-            !isLocalAddress(destination) &&
-            !knownIps.has(destination)
-        ) {
-            externalTrafficIps.set(
-                destination,
-                (
-                    externalTrafficIps.get(
-                        destination
-                    ) || 0
-                ) +
-                num(
-                    packet?.packet_size
-                )
-            );
-        }
-    }
-
-    const extraIps =
-        Array.from(
-            externalTrafficIps.entries()
-        )
-            .sort(
-                (a, b) =>
-                    b[1] - a[1]
-            )
-            .slice(
-                0,
-                Math.max(
-                    0,
-                    MAX_EXTERNAL_NODES -
-                    external.length
-                )
-            );
-
-    for (const entry of extraIps) {
-        external.push({
-            ip_address: entry[0],
-            hostname: "Traffic endpoint",
-            packet_count: 0,
-            status: "online",
-            is_extra: true
-        });
-    }
+    const external =
+        recentExternalEndpoints();
 
 
     topologyNodes = [];
@@ -929,17 +1219,21 @@ function buildTopologyData() {
 
     const sensor = {
         id: "sensor",
+
         type: "sensor",
 
         x:
-            width * 0.50,
+            width *
+            0.50,
 
         y:
-            height * 0.50,
+            height *
+            0.50,
 
         radius: 36,
 
-        label: "NETSENTINEL",
+        label:
+            "NETSENTINEL",
 
         sublabel:
             stats.mode ||
@@ -956,7 +1250,8 @@ function buildTopologyData() {
     ---------------------------------------------------------- */
 
     const localX =
-        width * 0.16;
+        width *
+        0.16;
 
     local.forEach(
         (
@@ -970,7 +1265,10 @@ function buildTopologyData() {
                         height * 0.18 +
                         (
                             index /
-                            (local.length - 1)
+                            (
+                                local.length -
+                                1
+                            )
                         ) *
                         height * 0.64
                     );
@@ -1028,11 +1326,12 @@ function buildTopologyData() {
 
 
     /* ----------------------------------------------------------
-       EXTERNAL DEVICES
+       EXTERNAL ENDPOINTS
     ---------------------------------------------------------- */
 
     const externalX =
-        width * 0.84;
+        width *
+        0.84;
 
     external.forEach(
         (
@@ -1046,15 +1345,13 @@ function buildTopologyData() {
                         height * 0.13 +
                         (
                             index /
-                            (external.length - 1)
+                            (
+                                external.length -
+                                1
+                            )
                         ) *
                         height * 0.74
                     );
-
-            const hostname =
-                device.is_extra
-                    ? "Traffic endpoint"
-                    : getHostname(device);
 
             const node = {
                 id:
@@ -1070,9 +1367,7 @@ function buildTopologyData() {
                     y,
 
                 radius:
-                    device.is_extra
-                        ? 19
-                        : 21,
+                    19,
 
                 ip:
                     getIp(device),
@@ -1083,13 +1378,13 @@ function buildTopologyData() {
                     ),
 
                 sublabel:
-                    hostname,
+                    "External endpoint",
 
                 status:
-                    normalizeStatus(device),
+                    "ONLINE",
 
                 packets:
-                    getPacketCount(device)
+                    0
             };
 
             topologyNodes.push(
@@ -1114,7 +1409,9 @@ function buildTopologyData() {
        EMPTY STATE
     ---------------------------------------------------------- */
 
-    if (topologyEmpty) {
+    if (
+        topologyEmpty
+    ) {
         topologyEmpty.style.display =
             topologyNodes.length <= 1
                 ? "flex"
@@ -1145,7 +1442,9 @@ function findNode(id) {
 function createParticles() {
     particles = [];
 
-    if (!topologyEdges.length) {
+    if (
+        !topologyEdges.length
+    ) {
         return;
     }
 
@@ -1205,18 +1504,29 @@ function bezierPoint(
         progress;
 
     const inv =
-        1 - p;
+        1 -
+        p;
 
     return {
         x:
             inv * inv * from.x +
-            2 * inv * p * controlX +
-            p * p * to.x,
+            2 *
+                inv *
+                p *
+                controlX +
+            p *
+                p *
+                to.x,
 
         y:
             inv * inv * from.y +
-            2 * inv * p * controlY +
-            p * p * to.y
+            2 *
+                inv *
+                p *
+                controlY +
+            p *
+                p *
+                to.y
     };
 }
 
@@ -1245,9 +1555,11 @@ function drawGrid(
     context.strokeStyle =
         "rgba(80,150,170,0.055)";
 
-    context.lineWidth = 1;
+    context.lineWidth =
+        1;
 
-    const grid = 32;
+    const grid =
+        32;
 
     for (
         let x = 0;
@@ -1416,14 +1728,23 @@ function drawConnection(
             to.y
         ) * 0.50;
 
-    let alpha = 0.18;
+    let alpha =
+        0.18;
 
-    if (type === "external") {
-        alpha = 0.22;
+    if (
+        type ===
+        "external"
+    ) {
+        alpha =
+            0.22;
     }
 
-    if (type === "local") {
-        alpha = 0.25;
+    if (
+        type ===
+        "local"
+    ) {
+        alpha =
+            0.25;
     }
 
     context.save();
@@ -1443,11 +1764,13 @@ function drawConnection(
     );
 
     context.strokeStyle =
-        type === "external"
+        type ===
+            "external"
             ? `rgba(150,160,255,${alpha})`
             : `rgba(80,210,230,${alpha})`;
 
-    context.lineWidth = 1.4;
+    context.lineWidth =
+        1.4;
 
     context.stroke();
 
@@ -1459,8 +1782,12 @@ function drawConnection(
    PARTICLE RENDERER
 ============================================================ */
 
-function drawParticles(context) {
-    for (const particle of particles) {
+function drawParticles(
+    context
+) {
+    for (
+        const particle of particles
+    ) {
         const edge =
             topologyEdges[
                 particle.edgeIndex
@@ -1480,17 +1807,23 @@ function drawParticles(context) {
                 edge.to
             );
 
-        if (!from || !to) {
+        if (
+            !from ||
+            !to
+        ) {
             continue;
         }
 
         particle.progress +=
-            particle.speed * 16;
+            particle.speed *
+            16;
 
         if (
-            particle.progress >= 1
+            particle.progress >=
+            1
         ) {
-            particle.progress = 0;
+            particle.progress =
+                0;
         }
 
         const point =
@@ -1501,7 +1834,8 @@ function drawParticles(context) {
             );
 
         const particleColor =
-            edge.type === "external"
+            edge.type ===
+                "external"
                 ? "#9da8ff"
                 : "#62e6ff";
 
@@ -1523,7 +1857,8 @@ function drawParticles(context) {
         context.shadowColor =
             particleColor;
 
-        context.shadowBlur = 10;
+        context.shadowBlur =
+            10;
 
         context.fill();
 
@@ -1534,7 +1869,6 @@ function drawParticles(context) {
 
 /* ============================================================
    LOCAL DEVICE NODE
-   IP LABEL = RIGHT SIDE
 ============================================================ */
 
 function drawDeviceNode(
@@ -1562,8 +1896,6 @@ function drawDeviceNode(
 
     context.save();
 
-    /* Outer ring */
-
     context.beginPath();
 
     context.arc(
@@ -1577,12 +1909,10 @@ function drawDeviceNode(
     context.strokeStyle =
         `${stroke}22`;
 
-    context.lineWidth = 1;
+    context.lineWidth =
+        1;
 
     context.stroke();
-
-
-    /* Main node */
 
     context.beginPath();
 
@@ -1602,12 +1932,10 @@ function drawDeviceNode(
     context.strokeStyle =
         stroke;
 
-    context.lineWidth = 1.8;
+    context.lineWidth =
+        1.8;
 
     context.stroke();
-
-
-    /* Core */
 
     context.beginPath();
 
@@ -1625,19 +1953,13 @@ function drawDeviceNode(
     context.shadowColor =
         stroke;
 
-    context.shadowBlur = 9;
+    context.shadowBlur =
+        9;
 
     context.fill();
 
-    context.shadowBlur = 0;
-
-
-    /*
-     * ========================================================
-     * IMPORTANT:
-     * LOCAL NODE LABELS ARE DRAWN TO THE RIGHT
-     * ========================================================
-     */
+    context.shadowBlur =
+        0;
 
     const labelX =
         node.x +
@@ -1666,7 +1988,8 @@ function drawDeviceNode(
         "#708991";
 
     const sublabel =
-        node.sublabel === "Unknown"
+        node.sublabel ===
+            "Unknown"
             ? "Network device"
             : node.sublabel;
 
@@ -1682,7 +2005,6 @@ function drawDeviceNode(
 
 /* ============================================================
    EXTERNAL NODE
-   IP LABEL = LEFT SIDE
 ============================================================ */
 
 function drawExternalNode(
@@ -1690,8 +2012,6 @@ function drawExternalNode(
     node
 ) {
     context.save();
-
-    /* Outer ring */
 
     context.beginPath();
 
@@ -1706,12 +2026,10 @@ function drawExternalNode(
     context.strokeStyle =
         "rgba(157,168,255,0.12)";
 
-    context.lineWidth = 1;
+    context.lineWidth =
+        1;
 
     context.stroke();
-
-
-    /* Main node */
 
     context.beginPath();
 
@@ -1731,12 +2049,10 @@ function drawExternalNode(
     context.strokeStyle =
         "#8f9aff";
 
-    context.lineWidth = 1.5;
+    context.lineWidth =
+        1.5;
 
     context.stroke();
-
-
-    /* Core */
 
     context.beginPath();
 
@@ -1754,19 +2070,13 @@ function drawExternalNode(
     context.shadowColor =
         "#9da8ff";
 
-    context.shadowBlur = 8;
+    context.shadowBlur =
+        8;
 
     context.fill();
 
-    context.shadowBlur = 0;
-
-
-    /*
-     * ========================================================
-     * IMPORTANT:
-     * EXTERNAL NODE LABELS ARE DRAWN TO THE LEFT
-     * ========================================================
-     */
+    context.shadowBlur =
+        0;
 
     const labelX =
         node.x -
@@ -1824,17 +2134,14 @@ function drawSensor(
 
     context.save();
 
-
-    /* Large pulse */
-
     context.beginPath();
 
     context.arc(
         node.x,
         node.y,
         node.radius +
-        15 +
-        pulse * 8,
+            15 +
+            pulse * 8,
         0,
         Math.PI * 2
     );
@@ -1842,12 +2149,10 @@ function drawSensor(
     context.strokeStyle =
         `rgba(80,220,235,${0.07 + pulse * 0.08})`;
 
-    context.lineWidth = 2;
+    context.lineWidth =
+        2;
 
     context.stroke();
-
-
-    /* Secondary ring */
 
     context.beginPath();
 
@@ -1862,12 +2167,10 @@ function drawSensor(
     context.strokeStyle =
         "rgba(80,220,235,0.20)";
 
-    context.lineWidth = 1;
+    context.lineWidth =
+        1;
 
     context.stroke();
-
-
-    /* Sensor body */
 
     context.beginPath();
 
@@ -1887,19 +2190,19 @@ function drawSensor(
     context.strokeStyle =
         "#62e6ff";
 
-    context.lineWidth = 2;
+    context.lineWidth =
+        2;
 
     context.shadowColor =
         "#62e6ff";
 
-    context.shadowBlur = 18;
+    context.shadowBlur =
+        18;
 
     context.stroke();
 
-    context.shadowBlur = 0;
-
-
-    /* Sensor core */
+    context.shadowBlur =
+        0;
 
     context.beginPath();
 
@@ -1917,14 +2220,13 @@ function drawSensor(
     context.shadowColor =
         "#62e6ff";
 
-    context.shadowBlur = 16;
+    context.shadowBlur =
+        16;
 
     context.fill();
 
-    context.shadowBlur = 0;
-
-
-    /* Sensor text */
+    context.shadowBlur =
+        0;
 
     context.textAlign =
         "center";
@@ -1939,8 +2241,8 @@ function drawSensor(
         node.label,
         node.x,
         node.y +
-        node.radius +
-        22
+            node.radius +
+            22
     );
 
     context.font =
@@ -1953,8 +2255,8 @@ function drawSensor(
         node.sublabel,
         node.x,
         node.y +
-        node.radius +
-        37
+            node.radius +
+            37
     );
 
     context.restore();
@@ -1989,11 +2291,13 @@ function drawLiveIndicator(
     context.shadowColor =
         context.fillStyle;
 
-    context.shadowBlur = 8;
+    context.shadowBlur =
+        8;
 
     context.fill();
 
-    context.shadowBlur = 0;
+    context.shadowBlur =
+        0;
 
     context.textAlign =
         "right";
@@ -2060,8 +2364,10 @@ function drawTopology(
         );
 
     if (
-        canvas.width !== targetWidth ||
-        canvas.height !== targetHeight
+        canvas.width !==
+            targetWidth ||
+        canvas.height !==
+            targetHeight
     ) {
         canvas.width =
             targetWidth;
@@ -2086,26 +2392,17 @@ function drawTopology(
         height
     );
 
-
-    /* Background */
-
     drawGrid(
         ctx,
         width,
         height
     );
 
-
-    /* Zones */
-
     drawZones(
         ctx,
         width,
         height
     );
-
-
-    /* Connections */
 
     for (
         const edge of topologyEdges
@@ -2135,17 +2432,13 @@ function drawTopology(
         );
     }
 
-
-    /* Particles */
-
-    if (!topologyPaused) {
+    if (
+        !topologyPaused
+    ) {
         drawParticles(
             ctx
         );
     }
-
-
-    /* Nodes */
 
     for (
         const node of topologyNodes
@@ -2179,18 +2472,14 @@ function drawTopology(
         }
     }
 
-
-    /* Live indicator */
-
     drawLiveIndicator(
         ctx,
         width
     );
 
-
-    /* Animation loop */
-
-    if (!topologyPaused) {
+    if (
+        !topologyPaused
+    ) {
         animationFrame =
             requestAnimationFrame(
                 drawTopology
@@ -2224,14 +2513,12 @@ async function loadNetwork() {
                 )
             ]);
 
-
         devices =
             Array.isArray(
                 deviceResponse
             )
                 ? deviceResponse
                 : [];
-
 
         traffic =
             Array.isArray(
@@ -2240,11 +2527,9 @@ async function loadNetwork() {
                 ? trafficResponse
                 : [];
 
-
         stats =
             statsResponse ||
             {};
-
 
         renderStats();
 
@@ -2254,8 +2539,9 @@ async function loadNetwork() {
 
         buildTopologyData();
 
-
-        if (animationFrame) {
+        if (
+            animationFrame
+        ) {
             cancelAnimationFrame(
                 animationFrame
             );
@@ -2264,8 +2550,9 @@ async function loadNetwork() {
                 null;
         }
 
-
-        if (!topologyPaused) {
+        if (
+            !topologyPaused
+        ) {
             animationFrame =
                 requestAnimationFrame(
                     drawTopology
@@ -2284,7 +2571,9 @@ async function loadNetwork() {
             error
         );
 
-        if (sensorStatus) {
+        if (
+            sensorStatus
+        ) {
             sensorStatus.textContent =
                 "TELEMETRY ERROR";
 
@@ -2303,7 +2592,9 @@ function resetTopology() {
     topologyPaused =
         false;
 
-    if (animationFrame) {
+    if (
+        animationFrame
+    ) {
         cancelAnimationFrame(
             animationFrame
         );
@@ -2325,7 +2616,9 @@ function resetTopology() {
    SEARCH
 ============================================================ */
 
-if (searchInput) {
+if (
+    searchInput
+) {
     searchInput.addEventListener(
         "input",
         () => {
@@ -2339,7 +2632,9 @@ if (searchInput) {
    STATUS FILTER
 ============================================================ */
 
-if (statusFilter) {
+if (
+    statusFilter
+) {
     statusFilter.addEventListener(
         "change",
         () => {
@@ -2353,7 +2648,9 @@ if (statusFilter) {
    REFRESH
 ============================================================ */
 
-if (refreshButton) {
+if (
+    refreshButton
+) {
     refreshButton.addEventListener(
         "click",
         async () => {
@@ -2383,7 +2680,9 @@ if (refreshButton) {
    RESET BUTTON
 ============================================================ */
 
-if (resetTopologyButton) {
+if (
+    resetTopologyButton
+) {
     resetTopologyButton.addEventListener(
         "click",
         () => {
@@ -2397,15 +2696,21 @@ if (resetTopologyButton) {
    DOUBLE CLICK = PAUSE / RESUME
 ============================================================ */
 
-if (canvas) {
+if (
+    canvas
+) {
     canvas.addEventListener(
         "dblclick",
         () => {
             topologyPaused =
                 !topologyPaused;
 
-            if (topologyPaused) {
-                if (animationFrame) {
+            if (
+                topologyPaused
+            ) {
+                if (
+                    animationFrame
+                ) {
                     cancelAnimationFrame(
                         animationFrame
                     );
@@ -2437,7 +2742,9 @@ window.addEventListener(
     () => {
         buildTopologyData();
 
-        if (topologyPaused) {
+        if (
+            topologyPaused
+        ) {
             drawTopology();
         }
     }
