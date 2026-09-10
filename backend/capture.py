@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import socket
 import subprocess
 import threading
@@ -26,32 +27,25 @@ from .models import Alert, Device, Traffic, db
 
 # ============================================================
 # NETSENTINEL
-# LIVE PACKET CAPTURE MANAGER
+# LIVE + DEMO PACKET CAPTURE MANAGER
 # ============================================================
 
 
 class CaptureManager:
     """
-    NETSENTINEL live packet capture manager.
+    NETSENTINEL packet capture manager.
 
-    Responsibilities:
-        - Immediate Scapy live packet capture
-        - Packet parsing
-        - Traffic persistence
-        - Device discovery
-        - Windows MAC/neighbor enrichment
-        - Hostname resolution
-        - IDS evaluation
-        - Alert persistence
-        - Runtime capture statistics
-        - Socket.IO packet/alert events
+    Supports two modes:
 
-    Important architecture:
-        Scapy capture starts immediately after the capture
-        thread begins.
+        LIVE
+            Real Scapy packet capture from a network interface.
 
-        Expensive device enrichment is NOT allowed to block
-        the packet capture startup.
+        DEMO
+            Synthetic Scapy packets passed through the SAME
+            packet-processing pipeline as LIVE traffic.
+
+    DEMO traffic is stored with is_demo=True.
+    LIVE traffic is stored with is_demo=False.
     """
 
     def __init__(self, app=None):
@@ -161,6 +155,44 @@ class CaptureManager:
 
             except Exception as exc:
                 self.set_error(exc)
+
+    # ========================================================
+    # MODE
+    # ========================================================
+
+    def current_mode(self):
+        app = self._unwrap_app(self.app)
+
+        if app is None:
+            return "LIVE"
+
+        config = getattr(
+            app,
+            "config",
+            {},
+        )
+
+        mode = str(
+            config.get(
+                "NETSENTINEL_MODE",
+                config.get(
+                    "MODE",
+                    config.get(
+                        "MONITOR_MODE",
+                        "LIVE",
+                    ),
+                ),
+            )
+        ).upper()
+
+        if mode in {
+            "DEMO",
+            "SIMULATION",
+            "TEST",
+        }:
+            return "DEMO"
+
+        return "LIVE"
 
     # ========================================================
     # TIME
@@ -310,10 +342,6 @@ class CaptureManager:
         local_ips = set()
         local_macs = set()
 
-        # ----------------------------------------------------
-        # Hostname/IP information
-        # ----------------------------------------------------
-
         try:
             hostname = socket.gethostname()
 
@@ -354,11 +382,7 @@ class CaptureManager:
         except Exception:
             pass
 
-        # ----------------------------------------------------
-        # Selected capture interface
-        # ----------------------------------------------------
-
-        if self.interface:
+        if self.interface and self.current_mode() != "DEMO":
             try:
                 interface_ip = get_if_addr(
                     self.interface
@@ -385,45 +409,38 @@ class CaptureManager:
             except Exception:
                 pass
 
-        # ----------------------------------------------------
-        # Scapy default interface
-        # ----------------------------------------------------
-
-        try:
-            default_interface = conf.iface
-
+        if self.current_mode() != "DEMO":
             try:
-                default_ip = get_if_addr(
-                    default_interface
-                )
+                default_interface = conf.iface
 
-                if self.is_valid_ip(default_ip):
-                    local_ips.add(default_ip)
+                try:
+                    default_ip = get_if_addr(
+                        default_interface
+                    )
+
+                    if self.is_valid_ip(default_ip):
+                        local_ips.add(default_ip)
+
+                except Exception:
+                    pass
+
+                try:
+                    default_mac = get_if_hwaddr(
+                        default_interface
+                    )
+
+                    default_mac = self.normalize_mac(
+                        default_mac
+                    )
+
+                    if default_mac:
+                        local_macs.add(default_mac)
+
+                except Exception:
+                    pass
 
             except Exception:
                 pass
-
-            try:
-                default_mac = get_if_hwaddr(
-                    default_interface
-                )
-
-                default_mac = self.normalize_mac(
-                    default_mac
-                )
-
-                if default_mac:
-                    local_macs.add(default_mac)
-
-            except Exception:
-                pass
-
-        except Exception:
-            pass
-
-        # ----------------------------------------------------
-        # Save caches
-        # ----------------------------------------------------
 
         with self.cache_lock:
             self.local_ip_cache.update(local_ips)
@@ -438,6 +455,9 @@ class CaptureManager:
     # ========================================================
 
     def refresh_windows_neighbors(self, force=False):
+        if self.current_mode() == "DEMO":
+            return 0
+
         now = time.time()
 
         if not force:
@@ -450,10 +470,6 @@ class CaptureManager:
         self.last_neighbor_refresh = now
 
         discovered = 0
-
-        # ----------------------------------------------------
-        # Get-NetNeighbor
-        # ----------------------------------------------------
 
         try:
             command = [
@@ -605,6 +621,52 @@ class CaptureManager:
             return None
 
         # ----------------------------------------------------
+        # DEMO packet Ethernet identity
+        # ----------------------------------------------------
+
+        if self.current_mode() == "DEMO":
+            try:
+                if packet is not None and packet.haslayer(
+                    Ether
+                ):
+                    ether = packet[Ether]
+
+                    source_mac = self.normalize_mac(
+                        ether.src
+                    )
+
+                    destination_mac = self.normalize_mac(
+                        ether.dst
+                    )
+
+                    if source_mac:
+                        with self.cache_lock:
+                            self.mac_cache[
+                                value
+                            ] = source_mac
+
+                        if (
+                            value
+                            == str(
+                                getattr(
+                                    packet.getlayer(IP),
+                                    "src",
+                                    "",
+                                )
+                            )
+                        ):
+                            return source_mac
+
+                    if destination_mac:
+                        return destination_mac
+
+            except Exception:
+                pass
+
+            with self.cache_lock:
+                return self.mac_cache.get(value)
+
+        # ----------------------------------------------------
         # Cache
         # ----------------------------------------------------
 
@@ -662,10 +724,6 @@ class CaptureManager:
         except Exception:
             pass
 
-        # ----------------------------------------------------
-        # Windows neighbor cache
-        # ----------------------------------------------------
-
         self.refresh_windows_neighbors()
 
         with self.cache_lock:
@@ -673,14 +731,6 @@ class CaptureManager:
 
         if cached:
             return cached
-
-        # ----------------------------------------------------
-        # Ethernet source MAC
-        #
-        # Only trust this for the local computer.
-        # Never assign a local Ethernet destination MAC
-        # to a remote Internet address.
-        # ----------------------------------------------------
 
         try:
             if packet is not None and packet.haslayer(
@@ -721,10 +771,6 @@ class CaptureManager:
         if not self.is_valid_ip(value):
             return None
 
-        # ----------------------------------------------------
-        # Cache
-        # ----------------------------------------------------
-
         with self.cache_lock:
             if value in self.hostname_cache:
                 return self.hostname_cache[value]
@@ -733,22 +779,16 @@ class CaptureManager:
 
         hostname = None
 
-        # ----------------------------------------------------
-        # Local computer
-        # ----------------------------------------------------
-
         if is_local:
             try:
                 hostname = socket.gethostname()
             except Exception:
                 hostname = None
 
-        # ----------------------------------------------------
-        # Private/local reverse DNS
-        # ----------------------------------------------------
-
-        if not hostname and self.is_private_or_local_ip(
-            value
+        if (
+            not hostname
+            and self.current_mode() != "DEMO"
+            and self.is_private_or_local_ip(value)
         ):
             try:
                 result = socket.gethostbyaddr(
@@ -760,10 +800,6 @@ class CaptureManager:
 
             except Exception:
                 hostname = None
-
-        # ----------------------------------------------------
-        # Cache result
-        # ----------------------------------------------------
 
         with self.cache_lock:
             self.hostname_cache[value] = hostname
@@ -780,6 +816,7 @@ class CaptureManager:
         mac_address=None,
         hostname=None,
         packet_increment=1,
+        is_demo=False,
     ):
         if not self.is_valid_ip(ip):
             return None
@@ -790,16 +827,12 @@ class CaptureManager:
             Device.query
             .filter_by(
                 ip_address=value,
-                is_demo=False,
+                is_demo=bool(is_demo),
             )
             .first()
         )
 
         now = self.utc_now()
-
-        # ----------------------------------------------------
-        # Create
-        # ----------------------------------------------------
 
         if device is None:
             device = Device(
@@ -808,14 +841,10 @@ class CaptureManager:
                 last_seen=now,
                 packet_count=0,
                 status="normal",
-                is_demo=False,
+                is_demo=bool(is_demo),
             )
 
             db.session.add(device)
-
-        # ----------------------------------------------------
-        # MAC
-        # ----------------------------------------------------
 
         normalized_mac = self.normalize_mac(
             mac_address
@@ -824,10 +853,6 @@ class CaptureManager:
         if normalized_mac:
             device.mac_address = normalized_mac
 
-        # ----------------------------------------------------
-        # Hostname
-        # ----------------------------------------------------
-
         if hostname:
             hostname_value = str(
                 hostname
@@ -835,10 +860,6 @@ class CaptureManager:
 
             if hostname_value:
                 device.hostname = hostname_value
-
-        # ----------------------------------------------------
-        # Activity
-        # ----------------------------------------------------
 
         device.last_seen = now
 
@@ -860,13 +881,8 @@ class CaptureManager:
     # ========================================================
 
     def enrich_existing_devices(self):
-        """
-        Enrich existing devices.
-
-        This function is intentionally separate from the
-        packet-capture startup path so it cannot prevent
-        Scapy from beginning live capture.
-        """
+        if self.current_mode() == "DEMO":
+            return
 
         self.discover_local_identity()
 
@@ -890,20 +906,12 @@ class CaptureManager:
             if not self.is_valid_ip(ip):
                 continue
 
-            # ------------------------------------------------
-            # MAC
-            # ------------------------------------------------
-
             if not device.mac_address:
                 mac = self.lookup_mac(ip)
 
                 if mac:
                     device.mac_address = mac
                     changed = True
-
-            # ------------------------------------------------
-            # Hostname
-            # ------------------------------------------------
 
             if not device.hostname:
                 hostname = self.resolve_hostname(
@@ -913,10 +921,6 @@ class CaptureManager:
                 if hostname:
                     device.hostname = hostname
                     changed = True
-
-            # ------------------------------------------------
-            # Activity status
-            # ------------------------------------------------
 
             if device.last_seen:
                 try:
@@ -974,7 +978,11 @@ class CaptureManager:
     # PACKET PARSING
     # ========================================================
 
-    def parse_packet(self, packet):
+    def parse_packet(
+        self,
+        packet,
+        is_demo=False,
+    ):
         if packet is None:
             return None
 
@@ -1108,10 +1116,6 @@ class CaptureManager:
 
             protocol = "ARP"
 
-        # ----------------------------------------------------
-        # Ignore packets without IP identity
-        # ----------------------------------------------------
-
         if not source_ip and not destination_ip:
             return None
 
@@ -1127,32 +1131,41 @@ class CaptureManager:
             "interface": (
                 str(self.interface)
                 if self.interface
-                else None
+                else (
+                    "DEMO"
+                    if is_demo
+                    else None
+                )
             ),
-            "is_demo": False,
+            "is_demo": bool(is_demo),
         }
 
     # ========================================================
     # PACKET PROCESSING
     # ========================================================
 
-    def process_packet(self, packet):
+    def process_packet(
+        self,
+        packet,
+        is_demo=False,
+    ):
         """
-        Process one captured packet.
+        Process a LIVE or DEMO packet.
 
-        The capture counter is incremented immediately when
-        a packet reaches this method, rather than only after
-        database/IDS processing completes.
+        LIVE:
+            is_demo=False
+
+        DEMO:
+            is_demo=True
         """
-
-        # ----------------------------------------------------
-        # Count the packet immediately
-        # ----------------------------------------------------
 
         self.packets_captured += 1
         self.last_packet_at = self.utc_now()
 
-        parsed = self.parse_packet(packet)
+        parsed = self.parse_packet(
+            packet,
+            is_demo=is_demo,
+        )
 
         if parsed is None:
             return
@@ -1194,29 +1207,37 @@ class CaptureManager:
 
         protocol = parsed["protocol"]
 
+        is_demo = bool(
+            parsed.get(
+                "is_demo",
+                False,
+            )
+        )
+
         # ----------------------------------------------------
-        # Refresh identity occasionally
+        # Identity refresh
         # ----------------------------------------------------
 
         now = time.time()
 
-        if (
-            now - self.last_identity_refresh
-            >= self.identity_refresh_interval
-        ):
-            try:
-                self.discover_local_identity()
-            except Exception:
-                pass
+        if not is_demo:
+            if (
+                now - self.last_identity_refresh
+                >= self.identity_refresh_interval
+            ):
+                try:
+                    self.discover_local_identity()
+                except Exception:
+                    pass
 
-        if (
-            now - self.last_neighbor_refresh
-            >= self.neighbor_refresh_interval
-        ):
-            try:
-                self.refresh_windows_neighbors()
-            except Exception:
-                pass
+            if (
+                now - self.last_neighbor_refresh
+                >= self.neighbor_refresh_interval
+            ):
+                try:
+                    self.refresh_windows_neighbors()
+                except Exception:
+                    pass
 
         # ----------------------------------------------------
         # Identity
@@ -1243,6 +1264,37 @@ class CaptureManager:
         )
 
         # ----------------------------------------------------
+        # DEMO hostname fallback
+        # ----------------------------------------------------
+
+        if is_demo:
+            demo_names = {
+                "10.10.10.10": "WORKSTATION-01",
+                "10.10.10.20": "WORKSTATION-02",
+                "10.10.10.30": "DEV-LAPTOP",
+                "10.10.10.40": "FILE-SERVER",
+                "10.10.10.50": "DATABASE-SERVER",
+                "10.10.10.60": "SECURITY-CLIENT",
+                "8.8.8.8": "GOOGLE-DNS",
+                "1.1.1.1": "CLOUDFLARE-DNS",
+                "142.250.183.14": "WEB-SERVICE",
+                "151.101.1.69": "CDN-SERVICE",
+                "104.18.32.47": "CLOUD-SERVICE",
+            }
+
+            source_hostname = (
+                source_hostname
+                or demo_names.get(source_ip)
+            )
+
+            destination_hostname = (
+                destination_hostname
+                or demo_names.get(
+                    destination_ip
+                )
+            )
+
+        # ----------------------------------------------------
         # Device tracking
         # ----------------------------------------------------
 
@@ -1253,6 +1305,7 @@ class CaptureManager:
                     mac_address=source_mac,
                     hostname=source_hostname,
                     packet_increment=1,
+                    is_demo=is_demo,
                 )
 
             if destination_ip:
@@ -1261,6 +1314,7 @@ class CaptureManager:
                     mac_address=destination_mac,
                     hostname=destination_hostname,
                     packet_increment=1,
+                    is_demo=is_demo,
                 )
 
             db.session.commit()
@@ -1298,7 +1352,7 @@ class CaptureManager:
                 interface=parsed[
                     "interface"
                 ],
-                is_demo=False,
+                is_demo=is_demo,
             )
 
             db.session.add(traffic)
@@ -1352,6 +1406,7 @@ class CaptureManager:
                     "packet_size": parsed[
                         "packet_size"
                     ],
+                    "is_demo": is_demo,
                 }
 
                 evaluate = getattr(
@@ -1372,6 +1427,7 @@ class CaptureManager:
                                 source_ip=source_ip,
                                 destination_ip=destination_ip,
                                 protocol=protocol,
+                                is_demo=is_demo,
                             )
 
                 else:
@@ -1382,10 +1438,6 @@ class CaptureManager:
                     )
 
                     if callable(process_packet):
-                        detection_packet[
-                            "is_demo"
-                        ] = False
-
                         process_packet(
                             detection_packet
                         )
@@ -1415,9 +1467,13 @@ class CaptureManager:
         source_ip,
         destination_ip,
         protocol,
+        is_demo=False,
     ):
         """
         Persist an IDS detection.
+
+        DEMO detections are stored separately from LIVE
+        detections using is_demo=True.
         """
 
         try:
@@ -1498,6 +1554,13 @@ class CaptureManager:
                     "protocol",
                     protocol,
                 )
+
+                if "is_demo" in detection:
+                    is_demo = bool(
+                        detection[
+                            "is_demo"
+                        ]
+                    )
 
             else:
                 return
@@ -1580,7 +1643,7 @@ class CaptureManager:
                     description
                 ),
                 status="new",
-                is_demo=False,
+                is_demo=bool(is_demo),
             )
 
             db.session.add(alert)
@@ -1603,22 +1666,13 @@ class CaptureManager:
     # ========================================================
 
     def _packet_callback(self, packet):
-        """
-        Scapy packet callback.
-
-        Keep this extremely lightweight.
-
-        The packet immediately enters process_packet(),
-        which increments the live capture counter before
-        any database or IDS processing occurs.
-        """
-
         if not self.running:
             return
 
         try:
             self.process_packet(
-                packet
+                packet,
+                is_demo=False,
             )
 
         except Exception as exc:
@@ -1673,6 +1727,12 @@ class CaptureManager:
                 "destination_mac": destination_mac,
                 "source_hostname": source_hostname,
                 "destination_hostname": destination_hostname,
+                "is_demo": bool(
+                    parsed.get(
+                        "is_demo",
+                        False,
+                    )
+                ),
             }
 
             self.socketio.emit(
@@ -1711,6 +1771,13 @@ class CaptureManager:
                 "confidence": alert.confidence,
                 "description": alert.description,
                 "status": alert.status,
+                "is_demo": bool(
+                    getattr(
+                        alert,
+                        "is_demo",
+                        False,
+                    )
+                ),
             }
 
             self.socketio.emit(
@@ -1726,36 +1793,15 @@ class CaptureManager:
     # ========================================================
 
     def _capture_loop(self):
-        """
-        Main background capture thread.
-
-        IMPORTANT:
-        Scapy starts FIRST.
-
-        Device enrichment happens only after capture has
-        successfully started and therefore cannot block
-        the live packet sensor from receiving packets.
-        """
-
         app = self._unwrap_app(
             self.app
         )
 
         try:
-            # ------------------------------------------------
-            # INITIAL IDENTITY
-            #
-            # Keep this lightweight.
-            # ------------------------------------------------
-
             try:
                 self.discover_local_identity()
             except Exception:
                 pass
-
-            # ------------------------------------------------
-            # START LIVE CAPTURE IMMEDIATELY
-            # ------------------------------------------------
 
             if not self.interface:
                 raise RuntimeError(
@@ -1782,13 +1828,6 @@ class CaptureManager:
     # ========================================================
 
     def _background_enrichment(self):
-        """
-        Perform expensive device enrichment separately.
-
-        This function is intentionally independent from the
-        Scapy capture loop.
-        """
-
         app = self._unwrap_app(
             self.app
         )
@@ -1806,7 +1845,7 @@ class CaptureManager:
             self.set_error(exc)
 
     # ========================================================
-    # START
+    # START LIVE CAPTURE
     # ========================================================
 
     def start(self, interface=None):
@@ -1826,10 +1865,6 @@ class CaptureManager:
         self.started_at = self.utc_now()
         self.last_packet_at = None
 
-        # ----------------------------------------------------
-        # Interface
-        # ----------------------------------------------------
-
         if interface:
             self.interface = interface
 
@@ -1848,10 +1883,6 @@ class CaptureManager:
                 "success": False,
                 "message": self.last_error,
             }
-
-        # ----------------------------------------------------
-        # Detector
-        # ----------------------------------------------------
 
         app = self._unwrap_app(
             self.app
@@ -1874,24 +1905,12 @@ class CaptureManager:
                     "error": str(exc),
                 }
 
-        # ----------------------------------------------------
-        # Lightweight local identity
-        # ----------------------------------------------------
-
         try:
             self.discover_local_identity()
         except Exception:
             pass
 
-        # ----------------------------------------------------
-        # START STATE
-        # ----------------------------------------------------
-
         self.running = True
-
-        # ----------------------------------------------------
-        # CAPTURE THREAD
-        # ----------------------------------------------------
 
         self.thread = threading.Thread(
             target=self._capture_loop,
@@ -1900,12 +1919,6 @@ class CaptureManager:
         )
 
         self.thread.start()
-
-        # ----------------------------------------------------
-        # ENRICHMENT THREAD
-        #
-        # Does NOT block Scapy.
-        # ----------------------------------------------------
 
         enrichment_thread = threading.Thread(
             target=self._background_enrichment,
@@ -1978,6 +1991,7 @@ class CaptureManager:
             "uptime_seconds": int(
                 uptime_seconds
             ),
+            "mode": self.current_mode(),
         }
 
 
@@ -2016,7 +2030,7 @@ def get_manager(
 
 
 # ============================================================
-# START CAPTURE
+# START LIVE CAPTURE
 # ============================================================
 
 def start_capture(
@@ -2036,6 +2050,567 @@ def start_capture(
     return manager.start(
         interface=interface
     )
+
+
+# ============================================================
+# DEMO PACKET BUILDERS
+# ============================================================
+
+DEMO_DEVICES = [
+    {
+        "ip": "10.10.10.10",
+        "mac": "02:10:10:10:10:10",
+        "name": "WORKSTATION-01",
+    },
+    {
+        "ip": "10.10.10.20",
+        "mac": "02:10:10:10:10:20",
+        "name": "WORKSTATION-02",
+    },
+    {
+        "ip": "10.10.10.30",
+        "mac": "02:10:10:10:10:30",
+        "name": "DEV-LAPTOP",
+    },
+    {
+        "ip": "10.10.10.40",
+        "mac": "02:10:10:10:10:40",
+        "name": "FILE-SERVER",
+    },
+    {
+        "ip": "10.10.10.50",
+        "mac": "02:10:10:10:10:50",
+        "name": "DATABASE-SERVER",
+    },
+    {
+        "ip": "10.10.10.60",
+        "mac": "02:10:10:10:10:60",
+        "name": "SECURITY-CLIENT",
+    },
+]
+
+
+DEMO_EXTERNAL_SERVICES = [
+    {
+        "ip": "8.8.8.8",
+        "mac": "02:08:08:08:08:08",
+        "port": 53,
+        "protocol": "UDP",
+    },
+    {
+        "ip": "1.1.1.1",
+        "mac": "02:01:01:01:01:01",
+        "port": 53,
+        "protocol": "UDP",
+    },
+    {
+        "ip": "142.250.183.14",
+        "mac": "02:14:25:18:31:14",
+        "port": 443,
+        "protocol": "TCP",
+    },
+    {
+        "ip": "151.101.1.69",
+        "mac": "02:15:10:01:06:09",
+        "port": 443,
+        "protocol": "TCP",
+    },
+    {
+        "ip": "104.18.32.47",
+        "mac": "02:10:18:32:47:01",
+        "port": 443,
+        "protocol": "TCP",
+    },
+]
+
+
+def _demo_tcp(
+    source,
+    destination_ip,
+    destination_mac,
+    destination_port,
+):
+    return (
+        Ether(
+            src=source["mac"],
+            dst=destination_mac,
+        )
+        / IP(
+            src=source["ip"],
+            dst=destination_ip,
+        )
+        / TCP(
+            sport=random.randint(
+                30000,
+                60000,
+            ),
+            dport=destination_port,
+            flags="S",
+        )
+    )
+
+
+def _demo_udp(
+    source,
+    destination_ip,
+    destination_mac,
+    destination_port,
+):
+    return (
+        Ether(
+            src=source["mac"],
+            dst=destination_mac,
+        )
+        / IP(
+            src=source["ip"],
+            dst=destination_ip,
+        )
+        / UDP(
+            sport=random.randint(
+                30000,
+                60000,
+            ),
+            dport=destination_port,
+        )
+        / b"NETSENTINEL-DEMO"
+    )
+
+
+def _demo_icmp(
+    source,
+    destination,
+):
+    return (
+        Ether(
+            src=source["mac"],
+            dst=destination["mac"],
+        )
+        / IP(
+            src=source["ip"],
+            dst=destination["ip"],
+        )
+        / ICMP()
+    )
+
+
+def _demo_normal_packet():
+    source = random.choice(
+        DEMO_DEVICES
+    )
+
+    traffic_type = random.choice(
+        [
+            "TCP",
+            "TCP",
+            "TCP",
+            "UDP",
+            "ICMP",
+        ]
+    )
+
+    if traffic_type == "ICMP":
+        destination = random.choice(
+            DEMO_DEVICES
+        )
+
+        while destination["ip"] == source["ip"]:
+            destination = random.choice(
+                DEMO_DEVICES
+            )
+
+        return _demo_icmp(
+            source,
+            destination,
+        )
+
+    service = random.choice(
+        DEMO_EXTERNAL_SERVICES
+    )
+
+    if traffic_type == "UDP":
+        return _demo_udp(
+            source=source,
+            destination_ip=service["ip"],
+            destination_mac=service["mac"],
+            destination_port=service["port"],
+        )
+
+    return _demo_tcp(
+        source=source,
+        destination_ip=service["ip"],
+        destination_mac=service["mac"],
+        destination_port=service["port"],
+    )
+
+
+def _demo_internal_packet():
+    source = random.choice(
+        DEMO_DEVICES[:3]
+    )
+
+    destination = random.choice(
+        DEMO_DEVICES[3:]
+    )
+
+    destination_port = random.choice(
+        [
+            80,
+            443,
+            445,
+            3306,
+            5432,
+            8080,
+        ]
+    )
+
+    return _demo_tcp(
+        source=source,
+        destination_ip=destination["ip"],
+        destination_mac=destination["mac"],
+        destination_port=destination_port,
+    )
+
+
+def _demo_port_scan_packets():
+    source = DEMO_DEVICES[2]
+    destination = DEMO_DEVICES[4]
+
+    packets = []
+
+    ports = list(
+        range(
+            20,
+            45,
+        )
+    )
+
+    random.shuffle(
+        ports
+    )
+
+    for port in ports:
+        packets.append(
+            _demo_tcp(
+                source=source,
+                destination_ip=destination["ip"],
+                destination_mac=destination["mac"],
+                destination_port=port,
+            )
+        )
+
+    return packets
+
+
+def _demo_connection_burst_packets():
+    source = DEMO_DEVICES[1]
+    destination = DEMO_DEVICES[3]
+
+    packets = []
+
+    for _ in range(65):
+        packets.append(
+            _demo_tcp(
+                source=source,
+                destination_ip=destination["ip"],
+                destination_mac=destination["mac"],
+                destination_port=random.choice(
+                    [
+                        22,
+                        80,
+                        443,
+                        8080,
+                        8443,
+                    ]
+                ),
+            )
+        )
+
+    return packets
+
+
+# ============================================================
+# DEMO GENERATOR
+# ============================================================
+
+_demo_thread = None
+_demo_running = False
+_demo_lock = threading.RLock()
+
+
+def _run_demo_cycle(
+    manager,
+):
+    # --------------------------------------------------------
+    # Normal traffic
+    # --------------------------------------------------------
+
+    for _ in range(15):
+        if not _demo_running:
+            return
+
+        manager.process_packet(
+            _demo_normal_packet(),
+            is_demo=True,
+        )
+
+        time.sleep(
+            0.08
+        )
+
+    # --------------------------------------------------------
+    # Internal traffic
+    # --------------------------------------------------------
+
+    for _ in range(10):
+        if not _demo_running:
+            return
+
+        manager.process_packet(
+            _demo_internal_packet(),
+            is_demo=True,
+        )
+
+        time.sleep(
+            0.08
+        )
+
+    # --------------------------------------------------------
+    # ICMP
+    # --------------------------------------------------------
+
+    source = DEMO_DEVICES[0]
+
+    destination = DEMO_DEVICES[5]
+
+    for _ in range(5):
+        if not _demo_running:
+            return
+
+        manager.process_packet(
+            _demo_icmp(
+                source,
+                destination,
+            ),
+            is_demo=True,
+        )
+
+        time.sleep(
+            0.08
+        )
+
+    # --------------------------------------------------------
+    # PORT SCAN
+    # --------------------------------------------------------
+
+    for packet in _demo_port_scan_packets():
+        if not _demo_running:
+            return
+
+        manager.process_packet(
+            packet,
+            is_demo=True,
+        )
+
+        time.sleep(
+            0.025
+        )
+
+    # --------------------------------------------------------
+    # CONNECTION RATE BURST
+    # --------------------------------------------------------
+
+    for packet in _demo_connection_burst_packets():
+        if not _demo_running:
+            return
+
+        manager.process_packet(
+            packet,
+            is_demo=True,
+        )
+
+        time.sleep(
+            0.015
+        )
+
+
+def _demo_loop(
+    app,
+    socketio=None,
+):
+    global _demo_running
+
+    manager = None
+
+    try:
+        manager = get_manager(
+            app=app,
+            socketio=socketio,
+        )
+
+        manager.interface = "DEMO"
+
+        manager.running = True
+
+        if manager.started_at is None:
+            manager.started_at = manager.utc_now()
+
+        while _demo_running:
+            _run_demo_cycle(
+                manager
+            )
+
+            if not _demo_running:
+                break
+
+            time.sleep(
+                1.0
+            )
+
+    except Exception as exc:
+        if manager is not None:
+            manager.set_error(
+                exc
+            )
+
+    finally:
+        _demo_running = False
+
+        if manager is not None:
+            manager.running = False
+
+
+def start_demo_if_enabled(
+    app,
+    socketio=None,
+):
+    global _demo_thread
+    global _demo_running
+
+    real_app = CaptureManager._unwrap_app(
+        app
+    )
+
+    if real_app is None:
+        return {
+            "success": False,
+            "started": False,
+            "message": (
+                "Flask application unavailable."
+            ),
+        }
+
+    config = getattr(
+        real_app,
+        "config",
+        {},
+    )
+
+    mode = str(
+        config.get(
+            "NETSENTINEL_MODE",
+            config.get(
+                "MODE",
+                config.get(
+                    "MONITOR_MODE",
+                    "DEMO",
+                ),
+            ),
+        )
+    ).upper()
+
+    if mode not in {
+        "DEMO",
+        "SIMULATION",
+        "TEST",
+    }:
+        return {
+            "success": True,
+            "started": False,
+            "mode": mode,
+            "message": (
+                "Demo generator not started "
+                f"because mode is {mode}."
+            ),
+        }
+
+    with _demo_lock:
+        if _demo_running:
+            return {
+                "success": True,
+                "started": True,
+                "mode": mode,
+                "message": (
+                    "Demo generator already running."
+                ),
+            }
+
+        _demo_running = True
+
+        manager = get_manager(
+            app=real_app,
+            socketio=socketio,
+        )
+
+        manager.interface = "DEMO"
+        manager.running = True
+        manager.started_at = manager.utc_now()
+        manager.last_packet_at = None
+        manager.last_error = None
+
+        _demo_thread = threading.Thread(
+            target=_demo_loop,
+            args=(
+                real_app,
+                socketio,
+            ),
+            name="NETSENTINEL-Demo",
+            daemon=True,
+        )
+
+        _demo_thread.start()
+
+    return {
+        "success": True,
+        "started": True,
+        "mode": mode,
+        "message": (
+            "Demo traffic generator started."
+        ),
+    }
+
+
+def stop_demo():
+    global _demo_running
+
+    with _demo_lock:
+        _demo_running = False
+
+    if _capture_manager is not None:
+        if (
+            _capture_manager.current_mode()
+            == "DEMO"
+        ):
+            _capture_manager.running = False
+
+    return {
+        "success": True,
+        "stopped": True,
+        "message": (
+            "Demo traffic generator stopped."
+        ),
+    }
+
+
+def demo_status():
+    return {
+        "running": bool(
+            _demo_running
+        ),
+        "thread_alive": bool(
+            _demo_thread
+            and _demo_thread.is_alive()
+        ),
+    }
 
 
 # ============================================================
@@ -2103,6 +2678,28 @@ def start_capture_if_enabled(
                 }
             )
 
+        # ----------------------------------------------------
+        # DEMO MODE
+        #
+        # DEMO does NOT require MONITORING_ENABLED=True.
+        # This is important for Render because there is no
+        # physical Wi-Fi interface available to Scapy.
+        # ----------------------------------------------------
+
+        if mode in {
+            "DEMO",
+            "SIMULATION",
+            "TEST",
+        }:
+            return start_demo_if_enabled(
+                app=real_app,
+                socketio=socketio,
+            )
+
+        # ----------------------------------------------------
+        # LIVE MODE
+        # ----------------------------------------------------
+
         if not monitoring_enabled:
             return {
                 "success": True,
@@ -2110,6 +2707,7 @@ def start_capture_if_enabled(
                 "message": (
                     "Live monitoring is disabled."
                 ),
+                "mode": mode,
             }
 
         if mode in {

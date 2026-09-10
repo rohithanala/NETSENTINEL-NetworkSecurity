@@ -19,13 +19,22 @@ def create_app():
 
     app.config.from_object("config.Config")
 
-    # Initialize the SAME SQLAlchemy instance used by all models.
+    # --------------------------------------------------------
+    # DATABASE
+    # --------------------------------------------------------
+
     db.init_app(app)
 
-    # Initialize Socket.IO.
+    # --------------------------------------------------------
+    # SOCKET.IO
+    # --------------------------------------------------------
+
     socketio.init_app(app)
 
-    # Register API routes.
+    # --------------------------------------------------------
+    # API
+    # --------------------------------------------------------
+
     from backend.routes import api
 
     app.register_blueprint(
@@ -33,18 +42,34 @@ def create_app():
         url_prefix="/api",
     )
 
-    # Register page routes.
+    # --------------------------------------------------------
+    # PAGE ROUTES
+    # --------------------------------------------------------
+
     from backend.pages import pages
 
-    app.register_blueprint(pages)
+    app.register_blueprint(
+        pages
+    )
 
-    # Create database tables.
+    # --------------------------------------------------------
+    # DATABASE TABLES
+    # --------------------------------------------------------
+
     with app.app_context():
         db.create_all()
 
-    # Start packet capture if LIVE mode is enabled.
-    from backend.capture import start_capture_if_enabled
+    # --------------------------------------------------------
+    # CAPTURE / DEMO
+    # --------------------------------------------------------
 
-    start_capture_if_enabled(app)
+    from backend.capture import (
+        start_capture_if_enabled,
+    )
+
+    start_capture_if_enabled(
+        app=app,
+        socketio=socketio,
+    )
 
     return app
