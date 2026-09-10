@@ -1,0 +1,1 @@
+async function getJSON(u,o={}){let r=await fetch(u,o);if(!r.ok)throw Error(r.status);return r.json()}function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]))}function time(v){let d=new Date(v);return v&&!isNaN(d)?d.toLocaleTimeString():"—"}function num(v){return Number(v||0).toLocaleString()}

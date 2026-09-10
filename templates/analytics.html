@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Analytics - NETSENTINEL</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/css/style.css"
+    >
+
+    <style>
+        /* =========================================================
+           ANALYTICS PAGE
+           ========================================================= */
+
+        .analytics-page {
+            padding-bottom: 60px;
+        }
+
+        .analytics-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+
+        .analytics-status {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 14px;
+            border: 1px solid rgba(80, 230, 170, .25);
+            background: rgba(20, 35, 40, .55);
+            border-radius: 999px;
+            color: #70e0a1;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .12em;
+            white-space: nowrap;
+        }
+
+        .analytics-status i {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 12px currentColor;
+            animation: analyticsPulse 1.4s infinite;
+        }
+
+        @keyframes analyticsPulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: .35;
+                transform: scale(.75);
+            }
+        }
+
+        .analytics-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 22px;
+            padding: 14px 16px;
+            border: 1px solid rgba(130, 170, 185, .16);
+            background: rgba(8, 18, 24, .72);
+            border-radius: 14px;
+            backdrop-filter: blur(10px);
+        }
+
+        .analytics-toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .range-button {
+            border: 1px solid rgba(130, 170, 185, .18);
+            background: rgba(20, 35, 42, .7);
+            color: #9fb0ba;
+            border-radius: 8px;
+            padding: 8px 13px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .06em;
+            transition: .2s ease;
+        }
+
+        .range-button:hover,
+        .range-button.active {
+            border-color: rgba(70, 220, 255, .45);
+            color: #65dfff;
+            background: rgba(40, 100, 115, .2);
+            box-shadow: 0 0 18px rgba(60, 210, 255, .08);
+        }
+
+        .refresh-info {
+            color: #657681;
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        /* =========================================================
+           KPI GRID
+           ========================================================= */
+
+        .analytics-kpis {
+            display: grid;
+            grid-template-columns:
+                repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .analytics-kpi {
+            position: relative;
+            overflow: hidden;
+            min-height: 125px;
+            padding: 19px;
+            border: 1px solid rgba(130, 170, 185, .15);
+            background:
+                linear-gradient(
+                    145deg,
+                    rgba(16, 31, 39, .95),
+                    rgba(7, 17, 23, .9)
+                );
+            border-radius: 15px;
+        }
+
+        .analytics-kpi::after {
+            content: "";
+            position: absolute;
+            right: -35px;
+            bottom: -45px;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 1px solid rgba(80, 220, 255, .08);
+            box-shadow:
+                0 0 35px rgba(80, 220, 255, .04);
+        }
+
+        .kpi-label {
+            color: #70818c;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+        }
+
+        .kpi-value {
+            margin-top: 12px;
+            color: #e9f5f8;
+            font-size: 30px;
+            line-height: 1;
+            font-weight: 800;
+            font-family: monospace;
+        }
+
+        .kpi-sub {
+            margin-top: 10px;
+            color: #60737d;
+            font-size: 10px;
+        }
+
+        /* =========================================================
+           CHART GRID
+           ========================================================= */
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns:
+                minmax(0, 1.65fr)
+                minmax(320px, 1fr);
+            gap: 18px;
+        }
+
+        .analytics-card {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(130, 170, 185, .15);
+            background:
+                linear-gradient(
+                    145deg,
+                    rgba(10, 22, 29, .94),
+                    rgba(5, 13, 18, .94)
+                );
+            border-radius: 15px;
+            min-height: 350px;
+        }
+
+        .analytics-card.wide {
+            grid-column: span 2;
+        }
+
+        .analytics-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            padding: 17px 18px 13px;
+            border-bottom: 1px solid rgba(130, 170, 185, .09);
+        }
+
+        .analytics-card-title {
+            color: #d9e7eb;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .analytics-card-meta {
+            color: #596b75;
+            font-size: 10px;
+            font-family: monospace;
+        }
+
+        .chart-area {
+            position: relative;
+            height: 285px;
+            padding: 10px 15px 15px;
+        }
+
+        canvas.analytics-chart {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* =========================================================
+           PROTOCOL LEGEND
+           ========================================================= */
+
+        .protocol-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 28px;
+            height: 285px;
+            padding: 20px;
+        }
+
+        .protocol-donut {
+            width: 180px;
+            height: 180px;
+            flex: 0 0 auto;
+        }
+
+        .protocol-legend {
+            min-width: 130px;
+        }
+
+        .protocol-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin: 12px 0;
+            color: #8ea1aa;
+            font-size: 11px;
+        }
+
+        .protocol-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .protocol-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+        }
+
+        .protocol-count {
+            color: #d8e7ea;
+            font-family: monospace;
+            font-weight: 800;
+        }
+
+        /* =========================================================
+           SECURITY DISTRIBUTION
+           ========================================================= */
+
+        .severity-list {
+            padding: 22px;
+        }
+
+        .severity-row {
+            margin-bottom: 18px;
+        }
+
+        .severity-head {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 7px;
+            color: #84959e;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .07em;
+        }
+
+        .severity-count {
+            color: #d8e7ea;
+            font-family: monospace;
+        }
+
+        .severity-track {
+            height: 7px;
+            overflow: hidden;
+            background: rgba(120, 150, 160, .1);
+            border-radius: 999px;
+        }
+
+        .severity-fill {
+            height: 100%;
+            width: 0;
+            border-radius: inherit;
+            transition: width .6s ease;
+        }
+
+        .severity-fill.critical {
+            background: #ff5368;
+            box-shadow: 0 0 12px rgba(255, 83, 104, .4);
+        }
+
+        .severity-fill.high {
+            background: #ff9b4a;
+            box-shadow: 0 0 12px rgba(255, 155, 74, .3);
+        }
+
+        .severity-fill.medium {
+            background: #e4c85c;
+            box-shadow: 0 0 12px rgba(228, 200, 92, .25);
+        }
+
+        .severity-fill.low {
+            background: #55d99c;
+            box-shadow: 0 0 12px rgba(85, 217, 156, .25);
+        }
+
+        /* =========================================================
+           TOP IP TABLES
+           ========================================================= */
+
+        .analytics-table-wrap {
+            padding: 10px 18px 18px;
+            overflow-x: auto;
+        }
+
+        .analytics-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .analytics-table th {
+            padding: 10px 8px;
+            text-align: left;
+            color: #566a74;
+            border-bottom: 1px solid rgba(130, 170, 185, .1);
+            font-size: 9px;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+        }
+
+        .analytics-table td {
+            padding: 11px 8px;
+            color: #91a5ae;
+            border-bottom: 1px solid rgba(130, 170, 185, .055);
+            font-size: 11px;
+        }
+
+        .analytics-table td:first-child {
+            color: #cce0e5;
+            font-family: monospace;
+        }
+
+        .rank {
+            color: #526873 !important;
+            width: 35px;
+            font-family: monospace;
+        }
+
+        .bar-cell {
+            min-width: 150px;
+        }
+
+        .mini-bar {
+            height: 5px;
+            overflow: hidden;
+            background: rgba(130, 170, 185, .08);
+            border-radius: 99px;
+        }
+
+        .mini-bar span {
+            display: block;
+            height: 100%;
+            width: 0;
+            border-radius: inherit;
+            background: #4edbff;
+            transition: width .5s ease;
+        }
+
+        /* =========================================================
+           EMPTY / ERROR
+           ========================================================= */
+
+        .analytics-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 240px;
+            color: #53656e;
+            font-size: 11px;
+            font-family: monospace;
+            text-align: center;
+        }
+
+        .analytics-error {
+            display: none;
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            border: 1px solid rgba(255, 80, 100, .2);
+            background: rgba(100, 20, 30, .12);
+            border-radius: 10px;
+            color: #ff7b89;
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        @media (max-width: 1000px) {
+            .analytics-kpis {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .analytics-card.wide {
+                grid-column: span 1;
+            }
+        }
+
+        @media (max-width: 650px) {
+            .analytics-kpis {
+                grid-template-columns: 1fr;
+            }
+
+            .analytics-header,
+            .analytics-toolbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .protocol-content {
+                flex-direction: column;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="cyberNetworkBackground"></canvas>
+
+    <div id="appLayer">
+
+        <header class="top">
+
+            <a
+                class="brand"
+                href="/dashboard"
+            >
+                NETSENTINEL
+            </a>
+
+            <nav class="nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/live-traffic">Traffic</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/network">Network</a>
+                <a
+                    href="/analytics"
+                    class="active"
+                >
+                    Analytics
+                </a>
+                <a href="/settings">Settings</a>
+            </nav>
+
+            <span class="analytics-status">
+                <i></i>
+                ANALYTICS LIVE
+            </span>
+
+        </header>
+
+        <main class="wrap analytics-page">
+
+            <section class="analytics-header">
+
+                <div class="hero">
+                    <div class="label">
+                        SECURITY OPERATIONS
+                    </div>
+
+                    <h1>
+                        Network Analytics
+                    </h1>
+                </div>
+
+            </section>
+
+            <div
+                id="analyticsError"
+                class="analytics-error"
+            ></div>
+
+            <!-- =====================================================
+                 TOOLBAR
+                 ===================================================== -->
+
+            <section class="analytics-toolbar">
+
+                <div class="analytics-toolbar-left">
+
+                    <button
+                        class="range-button active"
+                        data-range="5"
+                    >
+                        5 MIN
+                    </button>
+
+                    <button
+                        class="range-button"
+                        data-range="15"
+                    >
+                        15 MIN
+                    </button>
+
+                    <button
+                        class="range-button"
+                        data-range="60"
+                    >
+                        1 HOUR
+                    </button>
+
+                    <button
+                        class="range-button"
+                        data-range="all"
+                    >
+                        ALL
+                    </button>
+
+                </div>
+
+                <div class="refresh-info">
+                    LIVE DATA · UPDATE <span id="refreshAge">--</span>
+                </div>
+
+            </section>
+
+            <!-- =====================================================
+                 KPI CARDS
+                 ===================================================== -->
+
+            <section class="analytics-kpis">
+
+                <article class="analytics-kpi">
+                    <div class="kpi-label">
+                        Packets Observed
+                    </div>
+
+                    <div
+                        class="kpi-value"
+                        id="totalPackets"
+                    >
+                        0
+                    </div>
+
+                    <div class="kpi-sub">
+                        Captured by sensor
+                    </div>
+                </article>
+
+                <article class="analytics-kpi">
+                    <div class="kpi-label">
+                        Active Devices
+                    </div>
+
+                    <div
+                        class="kpi-value"
+                        id="totalDevices"
+                    >
+                        0
+                    </div>
+
+                    <div class="kpi-sub">
+                        Network assets detected
+                    </div>
+                </article>
+
+                <article class="analytics-kpi">
+                    <div class="kpi-label">
+                        Security Alerts
+                    </div>
+
+                    <div
+                        class="kpi-value"
+                        id="totalAlerts"
+                    >
+                        0
+                    </div>
+
+                    <div class="kpi-sub">
+                        IDS events recorded
+                    </div>
+                </article>
+
+                <article class="analytics-kpi">
+                    <div class="kpi-label">
+                        Traffic Rate
+                    </div>
+
+                    <div
+                        class="kpi-value"
+                        id="trafficRate"
+                    >
+                        0
+                    </div>
+
+                    <div class="kpi-sub">
+                        packets / second
+                    </div>
+                </article>
+
+            </section>
+
+            <!-- =====================================================
+                 CHARTS
+                 ===================================================== -->
+
+            <section class="analytics-grid">
+
+                <!-- Traffic -->
+                <article class="analytics-card wide">
+
+                    <header class="analytics-card-header">
+
+                        <div class="analytics-card-title">
+                            Traffic Activity
+                        </div>
+
+                        <div
+                            class="analytics-card-meta"
+                            id="trafficMeta"
+                        >
+                            LIVE
+                        </div>
+
+                    </header>
+
+                    <div class="chart-area">
+                        <canvas
+                            id="trafficAnalyticsChart"
+                            class="analytics-chart"
+                        ></canvas>
+                    </div>
+
+                </article>
+
+                <!-- Protocol -->
+                <article class="analytics-card">
+
+                    <header class="analytics-card-header">
+
+                        <div class="analytics-card-title">
+                            Protocol Distribution
+                        </div>
+
+                        <div class="analytics-card-meta">
+                            PACKETS
+                        </div>
+
+                    </header>
+
+                    <div class="protocol-content">
+
+                        <canvas
+                            id="protocolAnalyticsChart"
+                            class="protocol-donut"
+                        ></canvas>
+
+                        <div
+                            id="protocolLegend"
+                            class="protocol-legend"
+                        ></div>
+
+                    </div>
+
+                </article>
+
+                <!-- Security -->
+                <article class="analytics-card">
+
+                    <header class="analytics-card-header">
+
+                        <div class="analytics-card-title">
+                            Threat Severity
+                        </div>
+
+                        <div class="analytics-card-meta">
+                            IDS
+                        </div>
+
+                    </header>
+
+                    <div class="severity-list">
+
+                        <div class="severity-row">
+                            <div class="severity-head">
+                                <span>CRITICAL</span>
+                                <span
+                                    id="criticalCount"
+                                    class="severity-count"
+                                >
+                                    0
+                                </span>
+                            </div>
+
+                            <div class="severity-track">
+                                <div
+                                    id="criticalBar"
+                                    class="severity-fill critical"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <div class="severity-row">
+                            <div class="severity-head">
+                                <span>HIGH</span>
+                                <span
+                                    id="highCount"
+                                    class="severity-count"
+                                >
+                                    0
+                                </span>
+                            </div>
+
+                            <div class="severity-track">
+                                <div
+                                    id="highBar"
+                                    class="severity-fill high"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <div class="severity-row">
+                            <div class="severity-head">
+                                <span>MEDIUM</span>
+                                <span
+                                    id="mediumCount"
+                                    class="severity-count"
+                                >
+                                    0
+                                </span>
+                            </div>
+
+                            <div class="severity-track">
+                                <div
+                                    id="mediumBar"
+                                    class="severity-fill medium"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <div class="severity-row">
+                            <div class="severity-head">
+                                <span>LOW</span>
+                                <span
+                                    id="lowCount"
+                                    class="severity-count"
+                                >
+                                    0
+                                </span>
+                            </div>
+
+                            <div class="severity-track">
+                                <div
+                                    id="lowBar"
+                                    class="severity-fill low"
+                                ></div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </article>
+
+                <!-- Top Sources -->
+                <article class="analytics-card">
+
+                    <header class="analytics-card-header">
+
+                        <div class="analytics-card-title">
+                            Top Source IPs
+                        </div>
+
+                        <div class="analytics-card-meta">
+                            ACTIVITY
+                        </div>
+
+                    </header>
+
+                    <div class="analytics-table-wrap">
+
+                        <table class="analytics-table">
+
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Source</th>
+                                    <th>Packets</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="sourceIpRows">
+                                <tr>
+                                    <td colspan="3">
+                                        <div class="analytics-empty">
+                                            Waiting for traffic data...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </article>
+
+                <!-- Top Destinations -->
+                <article class="analytics-card">
+
+                    <header class="analytics-card-header">
+
+                        <div class="analytics-card-title">
+                            Top Destinations
+                        </div>
+
+                        <div class="analytics-card-meta">
+                            ACTIVITY
+                        </div>
+
+                    </header>
+
+                    <div class="analytics-table-wrap">
+
+                        <table class="analytics-table">
+
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Destination</th>
+                                    <th>Packets</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="destinationIpRows">
+                                <tr>
+                                    <td colspan="3">
+                                        <div class="analytics-empty">
+                                            Waiting for traffic data...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </article>
+
+            </section>
+
+        </main>
+
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/analytics.js"></script>
+
+</body>
+</html>

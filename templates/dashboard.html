@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>NETSENTINEL | Security Operations Center</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/css/style.css"
+    >
+</head>
+
+<body>
+
+    <canvas id="cyberNetworkBackground"></canvas>
+
+    <div id="appLayer">
+
+        <header class="top">
+
+            <div class="brand-section">
+
+                <a
+                    class="brand"
+                    href="/dashboard"
+                >
+                    NETSENTINEL
+                </a>
+
+                <span class="brand-subtitle">
+                    SECURITY OPERATIONS CENTER
+                </span>
+
+            </div>
+
+
+            <nav class="nav">
+
+                <a
+                    href="/dashboard"
+                    class="active"
+                >
+                    Dashboard
+                </a>
+
+                <a href="/live-traffic">
+                    Traffic
+                </a>
+
+                <a href="/alerts">
+                    Alerts
+                </a>
+
+                <a href="/network">
+                    Network
+                </a>
+
+                <a href="/analytics">
+                    Analytics
+                </a>
+
+                <a href="/settings">
+                    Settings
+                </a>
+
+            </nav>
+
+
+            <div class="system-status">
+
+                <span
+                    id="dashStatusDot"
+                    class="status-indicator status-online"
+                ></span>
+
+                <span id="dashStatusText">
+                    CONNECTING
+                </span>
+
+            </div>
+
+        </header>
+
+
+        <main class="wrap">
+
+            <section class="command-header">
+
+                <div>
+
+                    <div class="label">
+                        NETWORK SECURITY / LIVE TELEMETRY
+                    </div>
+
+                    <h1>
+                        Real-Time Network Command Center
+                    </h1>
+
+                    <p class="muted">
+                        Network visibility, packet telemetry,
+                        asset monitoring and intrusion detection.
+                    </p>
+
+                </div>
+
+
+                <div class="command-state">
+
+                    <span class="state-label">
+                        MONITORING
+                    </span>
+
+                    <strong id="statMonitoring">
+                        Checking...
+                    </strong>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 CORE METRICS
+                 ================================================= -->
+
+            <section class="metric-grid">
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            PACKETS CAPTURED
+                        </span>
+
+                        <span class="metric-icon">
+                            PKT
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statPacketsCaptured"
+                        class="metric"
+                    >
+                        0
+                    </strong>
+
+                    <span class="metric-description">
+                        Network packets inspected
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            ACTIVE CONNECTIONS
+                        </span>
+
+                        <span class="metric-icon">
+                            CON
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statActiveConnections"
+                        class="metric"
+                    >
+                        0
+                    </strong>
+
+                    <span class="metric-description">
+                        Observed network connections
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            ACTIVE DEVICES
+                        </span>
+
+                        <span class="metric-icon">
+                            DEV
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statActiveDevices"
+                        class="metric"
+                    >
+                        0
+                    </strong>
+
+                    <span class="metric-description">
+                        Discovered network assets
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            SECURITY ALERTS
+                        </span>
+
+                        <span class="metric-icon alert-icon">
+                            ALT
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statSecurityAlerts"
+                        class="metric"
+                    >
+                        0
+                    </strong>
+
+                    <span class="metric-description">
+                        Active IDS events
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            THREATS DETECTED
+                        </span>
+
+                        <span class="metric-icon threat-icon">
+                            THR
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statThreatsDetected"
+                        class="metric"
+                    >
+                        0
+                    </strong>
+
+                    <span class="metric-description">
+                        High and critical events
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            TRAFFIC RATE
+                        </span>
+
+                        <span class="metric-icon">
+                            PPS
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statTrafficRate"
+                        class="metric"
+                    >
+                        0.00 pps
+                    </strong>
+
+                    <span class="metric-description">
+                        Current packet velocity
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            LAST PACKET
+                        </span>
+
+                        <span class="metric-icon">
+                            LST
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statLastPacket"
+                        class="metric metric-small"
+                    >
+                        —
+                    </strong>
+
+                    <span class="metric-description">
+                        Latest telemetry event
+                    </span>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <div class="metric-top">
+
+                        <span class="label">
+                            SENSOR UPTIME
+                        </span>
+
+                        <span class="metric-icon">
+                            UP
+                        </span>
+
+                    </div>
+
+                    <strong
+                        id="statUptime"
+                        class="metric metric-small"
+                    >
+                        00:00:00
+                    </strong>
+
+                    <span class="metric-description">
+                        Capture engine runtime
+                    </span>
+
+                </article>
+
+            </section>
+
+
+            <!-- =================================================
+                 TRAFFIC + PROTOCOL
+                 ================================================= -->
+
+            <section class="dashboard-columns">
+
+                <article class="panel chart-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <span class="label">
+                                NETWORK TELEMETRY
+                            </span>
+
+                            <h2>
+                                Live Traffic
+                            </h2>
+
+                        </div>
+
+
+                        <div
+                            id="trafficChartToggle"
+                            class="chart-toggle"
+                        >
+
+                            <button
+                                class="chip active"
+                                data-metric="pps"
+                                type="button"
+                            >
+                                PPS
+                            </button>
+
+                            <button
+                                class="chip"
+                                data-metric="bps"
+                                type="button"
+                            >
+                                BPS
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="chart-container">
+
+                        <canvas
+                            id="liveTrafficChart"
+                        ></canvas>
+
+                    </div>
+
+                </article>
+
+
+                <article class="panel protocol-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <span class="label">
+                                TRAFFIC ANALYTICS
+                            </span>
+
+                            <h2>
+                                Protocol Distribution
+                            </h2>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="chart-container">
+
+                        <canvas
+                            id="protocolChart"
+                        ></canvas>
+
+                    </div>
+
+                </article>
+
+            </section>
+
+
+            <!-- =================================================
+                 SENSOR INFORMATION
+                 ================================================= -->
+
+            <section class="sensor-grid">
+
+                <div class="sensor-item">
+
+                    <span class="label">
+                        NETWORK INTERFACE
+                    </span>
+
+                    <strong id="statInterface">
+                        Detecting...
+                    </strong>
+
+                </div>
+
+
+                <div class="sensor-item">
+
+                    <span class="label">
+                        CAPTURE ENGINE
+                    </span>
+
+                    <strong>
+                        SCAPY
+                    </strong>
+
+                </div>
+
+
+                <div class="sensor-item">
+
+                    <span class="label">
+                        DETECTION ENGINE
+                    </span>
+
+                    <strong>
+                        REAL-TIME IDS
+                    </strong>
+
+                </div>
+
+
+                <div class="sensor-item">
+
+                    <span class="label">
+                        STATUS
+                    </span>
+
+                    <strong id="sensorStatus">
+                        INITIALIZING
+                    </strong>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 ALERTS
+                 ================================================= -->
+
+            <section class="panel">
+
+                <div class="card-header">
+
+                    <div>
+
+                        <span class="label">
+                            IDS / SECURITY EVENTS
+                        </span>
+
+                        <h2>
+                            Recent Security Alerts
+                        </h2>
+
+                    </div>
+
+
+                    <a
+                        href="/alerts"
+                        class="panel-link"
+                    >
+                        VIEW ALL →
+                    </a>
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table class="table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    TIME
+                                </th>
+
+                                <th>
+                                    DETECTION
+                                </th>
+
+                                <th>
+                                    SOURCE
+                                </th>
+
+                                <th>
+                                    DESTINATION
+                                </th>
+
+                                <th>
+                                    SEVERITY
+                                </th>
+
+                                <th>
+                                    STATUS
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="recentAlertsBody">
+
+                            <tr class="empty-row">
+
+                                <td colspan="6">
+                                    Loading security telemetry...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 TRAFFIC TABLE
+                 ================================================= -->
+
+            <section class="panel">
+
+                <div class="card-header">
+
+                    <div>
+
+                        <span class="label">
+                            PACKET TELEMETRY
+                        </span>
+
+                        <h2>
+                            Latest Network Traffic
+                        </h2>
+
+                    </div>
+
+
+                    <a
+                        href="/live-traffic"
+                        class="panel-link"
+                    >
+                        OPEN TRAFFIC MONITOR →
+                    </a>
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table class="table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    TIME
+                                </th>
+
+                                <th>
+                                    SOURCE
+                                </th>
+
+                                <th>
+                                    DESTINATION
+                                </th>
+
+                                <th>
+                                    PROTOCOL
+                                </th>
+
+                                <th>
+                                    PORT
+                                </th>
+
+                                <th>
+                                    BYTES
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="trafficRows">
+
+                            <tr class="empty-row">
+
+                                <td colspan="6">
+                                    Waiting for packet telemetry...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <footer class="footer">
+
+            <span>
+                NETSENTINEL
+            </span>
+
+            <span>
+                REAL-TIME NETWORK DEFENSE PLATFORM
+            </span>
+
+            <span>
+                DEFENSIVE MONITORING
+            </span>
+
+        </footer>
+
+    </div>
+
+
+    <!-- =========================================================
+         CHART.JS
+         MUST LOAD BEFORE dashboard.js
+         ========================================================= -->
+
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
+    ></script>
+
+
+    <!-- =========================================================
+         NETSENTINEL SCRIPTS
+         ========================================================= -->
+
+    <script
+        src="/static/js/app.js"
+    ></script>
+
+    <script
+        src="/static/js/dashboard.js"
+    ></script>
+
+    <script
+        src="/static/js/cyber-background.js"
+    ></script>
+
+</body>
+</html>

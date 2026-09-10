@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Network Center - NETSENTINEL</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/css/style.css"
+    >
+
+    <style>
+        /* =========================================================
+           NETWORK COMMAND CENTER
+        ========================================================= */
+
+        .network-page {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* ---------- Header ---------- */
+
+        .network-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 22px;
+            flex-wrap: wrap;
+        }
+
+        .network-header h1 {
+            margin: 5px 0 7px;
+            font-size: clamp(28px, 4vw, 42px);
+            line-height: 1;
+        }
+
+        .network-header p {
+            margin: 0;
+            max-width: 700px;
+        }
+
+        .network-live-state {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid rgba(112, 224, 161, .28);
+            border-radius: 999px;
+            background: rgba(112, 224, 161, .06);
+            color: #70e0a1;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: .1em;
+        }
+
+        .network-live-state i {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 12px currentColor;
+            animation: networkBlink 1.2s infinite;
+        }
+
+        @keyframes networkBlink {
+            0%, 100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .35;
+            }
+        }
+
+        /* ---------- Statistics ---------- */
+
+        .network-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .network-stat {
+            position: relative;
+            overflow: hidden;
+            min-height: 125px;
+        }
+
+        .network-stat::after {
+            content: "";
+            position: absolute;
+            right: -35px;
+            bottom: -45px;
+            width: 110px;
+            height: 110px;
+            border: 1px solid rgba(98, 230, 255, .08);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .network-stat .stat-value {
+            margin-top: 9px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 30px;
+            font-weight: 900;
+            color: #e9f8ff;
+        }
+
+        .network-stat .stat-sub {
+            margin-top: 5px;
+            color: #718894;
+            font-size: 11px;
+        }
+
+        /* ---------- Main topology card ---------- */
+
+        .topology-card {
+            padding: 18px;
+            overflow: hidden;
+        }
+
+        .topology-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .topology-title {
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .14em;
+            color: #8fa9b8;
+        }
+
+        .topology-subtitle {
+            margin-top: 5px;
+            color: #718894;
+            font-size: 12px;
+        }
+
+        .topology-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .topology-actions button {
+            border: 1px solid #193442;
+            border-radius: 8px;
+            padding: 8px 11px;
+            background: #08151e;
+            color: #dceaf2;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .topology-actions button:hover {
+            border-color: #62e6ff;
+            color: #62e6ff;
+        }
+
+        .topology-interface {
+            max-width: 390px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: Consolas, monospace;
+            font-size: 10px;
+            color: #718894;
+        }
+
+        /* ---------- Topology canvas ---------- */
+
+        .topology-shell {
+            position: relative;
+            height: 510px;
+            overflow: hidden;
+            border: 1px solid #193442;
+            border-radius: 13px;
+            background:
+                linear-gradient(
+                    rgba(98, 230, 255, .025) 1px,
+                    transparent 1px
+                ),
+                linear-gradient(
+                    90deg,
+                    rgba(98, 230, 255, .025) 1px,
+                    transparent 1px
+                ),
+                radial-gradient(
+                    circle at 50% 50%,
+                    rgba(0, 214, 255, .055),
+                    transparent 35%
+                ),
+                #06121a;
+            background-size: 32px 32px;
+        }
+
+        #networkCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .topology-zone {
+            position: absolute;
+            top: 18px;
+            z-index: 3;
+            pointer-events: none;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: .16em;
+            color: #718894;
+        }
+
+        .topology-zone.local {
+            left: 24px;
+        }
+
+        .topology-zone.sensor {
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .topology-zone.external {
+            right: 24px;
+        }
+
+        .topology-legend {
+            position: absolute;
+            left: 18px;
+            bottom: 15px;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 8px 10px;
+            border: 1px solid rgba(25, 52, 66, .9);
+            border-radius: 8px;
+            background: rgba(4, 14, 21, .82);
+            backdrop-filter: blur(8px);
+            font-size: 10px;
+            color: #8fa9b8;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .legend-local {
+            color: #62e6ff;
+            background: currentColor;
+        }
+
+        .legend-sensor {
+            color: #70e0a1;
+            background: currentColor;
+        }
+
+        .legend-external {
+            color: #9da8ff;
+            background: currentColor;
+        }
+
+        .legend-alert {
+            color: #ffb36b;
+            background: currentColor;
+        }
+
+        .topology-empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #718894;
+            font-size: 12px;
+            pointer-events: none;
+        }
+
+        /* ---------- Inventory ---------- */
+
+        .inventory-card {
+            margin-top: 16px;
+            padding: 18px;
+        }
+
+        .inventory-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .inventory-title {
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .14em;
+            color: #8fa9b8;
+        }
+
+        .inventory-subtitle {
+            margin-top: 5px;
+            color: #718894;
+            font-size: 12px;
+        }
+
+        .inventory-count {
+            color: #62e6ff;
+            font-family: Consolas, monospace;
+            font-size: 11px;
+        }
+
+        .inventory-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .inventory-controls input,
+        .inventory-controls select {
+            min-height: 38px;
+            border: 1px solid #193442;
+            border-radius: 8px;
+            padding: 8px 11px;
+            outline: none;
+            background: #08151e;
+            color: #dceaf2;
+        }
+
+        .inventory-controls input {
+            min-width: 250px;
+        }
+
+        .inventory-controls input:focus,
+        .inventory-controls select:focus {
+            border-color: #62e6ff;
+        }
+
+        .device-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #142d3a;
+            border-radius: 10px;
+        }
+
+        .device-table {
+            width: 100%;
+            min-width: 900px;
+            border-collapse: collapse;
+        }
+
+        .device-table th {
+            padding: 12px 13px;
+            border-bottom: 1px solid #193442;
+            background: rgba(8, 21, 30, .8);
+            color: #718894;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: .12em;
+            text-align: left;
+            text-transform: uppercase;
+        }
+
+        .device-table td {
+            padding: 13px;
+            border-bottom: 1px solid rgba(25, 52, 66, .55);
+            color: #dceaf2;
+            font-size: 12px;
+        }
+
+        .device-table tbody tr {
+            transition: background .15s ease;
+        }
+
+        .device-table tbody tr:hover {
+            background: rgba(98, 230, 255, .035);
+        }
+
+        .device-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .mono {
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        .ip-value {
+            color: #62e6ff;
+        }
+
+        .mac-value {
+            color: #8fa9b8;
+        }
+
+        .hostname-value {
+            color: #dceaf2;
+            font-weight: 700;
+        }
+
+        .packet-value {
+            font-family: Consolas, monospace;
+            font-weight: 800;
+        }
+
+        .last-seen-value {
+            color: #8fa9b8;
+            font-size: 11px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .status-pill i {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 7px currentColor;
+        }
+
+        .status-online {
+            color: #70e0a1;
+            border: 1px solid rgba(112, 224, 161, .25);
+            background: rgba(112, 224, 161, .06);
+        }
+
+        .status-suspicious {
+            color: #ffb36b;
+            border: 1px solid rgba(255, 179, 107, .25);
+            background: rgba(255, 179, 107, .06);
+        }
+
+        .status-critical {
+            color: #ff7373;
+            border: 1px solid rgba(255, 115, 115, .25);
+            background: rgba(255, 115, 115, .06);
+        }
+
+        .status-inactive {
+            color: #718894;
+            border: 1px solid rgba(113, 136, 148, .22);
+            background: rgba(113, 136, 148, .05);
+        }
+
+        .empty-devices {
+            padding: 45px 20px !important;
+            text-align: center;
+            color: #718894 !important;
+        }
+
+        /* ---------- Responsive ---------- */
+
+        @media (max-width: 1000px) {
+            .network-summary {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .topology-shell {
+                height: 460px;
+            }
+        }
+
+        @media (max-width: 650px) {
+            .network-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .inventory-controls {
+                width: 100%;
+            }
+
+            .inventory-controls input {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .topology-shell {
+                height: 430px;
+            }
+
+            .topology-zone {
+                font-size: 8px;
+            }
+
+            .topology-zone.local {
+                left: 12px;
+            }
+
+            .topology-zone.external {
+                right: 12px;
+            }
+
+            .topology-legend {
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="cyberNetworkBackground"></canvas>
+
+    <div id="appLayer">
+
+        <!-- =====================================================
+             HEADER
+        ====================================================== -->
+
+        <header class="top">
+
+            <a
+                class="brand"
+                href="/dashboard"
+            >
+                NETSENTINEL
+            </a>
+
+            <nav class="nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/live-traffic">Traffic</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/network">Network</a>
+                <a href="/analytics">Analytics</a>
+                <a href="/settings">Settings</a>
+            </nav>
+
+            <span class="network-live-state">
+                <i></i>
+                NETWORK LIVE
+            </span>
+
+        </header>
+
+
+        <!-- =====================================================
+             MAIN
+        ====================================================== -->
+
+        <main class="wrap network-page">
+
+            <!-- Page heading -->
+
+            <section class="network-header">
+
+                <div>
+                    <div class="label">
+                        ASSET & TOPOLOGY CENTER
+                    </div>
+
+                    <h1>
+                        Network Command Map
+                    </h1>
+
+                    <p class="muted">
+                        Live network assets, traffic relationships
+                        and monitored infrastructure.
+                    </p>
+                </div>
+
+                <div>
+                    <div
+                        class="muted"
+                        style="font-size:10px; text-align:right;"
+                    >
+                        SENSOR STATUS
+                    </div>
+
+                    <div
+                        id="networkSensorStatus"
+                        style="
+                            margin-top:5px;
+                            color:#70e0a1;
+                            font-family:Consolas,monospace;
+                            font-size:12px;
+                            font-weight:800;
+                            text-align:right;
+                        "
+                    >
+                        INITIALIZING
+                    </div>
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 STATISTICS
+            ================================================== -->
+
+            <section class="network-summary">
+
+                <div class="card network-stat">
+
+                    <div class="label">
+                        ACTIVE DEVICES
+                    </div>
+
+                    <div
+                        class="stat-value"
+                        id="activeDevices"
+                    >
+                        0
+                    </div>
+
+                    <div class="stat-sub">
+                        Observed network assets
+                    </div>
+
+                </div>
+
+
+                <div class="card network-stat">
+
+                    <div class="label">
+                        CONNECTIONS
+                    </div>
+
+                    <div
+                        class="stat-value"
+                        id="activeConnections"
+                    >
+                        0
+                    </div>
+
+                    <div class="stat-sub">
+                        Recent network flows
+                    </div>
+
+                </div>
+
+
+                <div class="card network-stat">
+
+                    <div class="label">
+                        PACKETS OBSERVED
+                    </div>
+
+                    <div
+                        class="stat-value"
+                        id="packetsObserved"
+                    >
+                        0
+                    </div>
+
+                    <div class="stat-sub">
+                        Captured telemetry
+                    </div>
+
+                </div>
+
+
+                <div class="card network-stat">
+
+                    <div class="label">
+                        IPV6 ASSETS
+                    </div>
+
+                    <div
+                        class="stat-value"
+                        id="ipv6Devices"
+                    >
+                        0
+                    </div>
+
+                    <div class="stat-sub">
+                        IPv6 endpoints detected
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 TOPOLOGY
+            ================================================== -->
+
+            <section class="card topology-card">
+
+                <div class="topology-toolbar">
+
+                    <div>
+
+                        <div class="topology-title">
+                            LIVE NETWORK TOPOLOGY
+                        </div>
+
+                        <div class="topology-subtitle">
+                            Local infrastructure, NETSENTINEL
+                            sensor and external traffic relationships
+                        </div>
+
+                    </div>
+
+
+                    <div class="topology-actions">
+
+                        <span
+                            class="topology-interface"
+                            id="interfaceName"
+                        >
+                            Interface: AUTO
+                        </span>
+
+                        <button
+                            id="refreshButton"
+                            type="button"
+                        >
+                            Refresh
+                        </button>
+
+                        <button
+                            id="resetTopology"
+                            type="button"
+                        >
+                            Reset View
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <div class="topology-shell">
+
+                    <div class="topology-zone local">
+                        LOCAL NETWORK
+                    </div>
+
+                    <div class="topology-zone sensor">
+                        NETSENTINEL SENSOR
+                    </div>
+
+                    <div class="topology-zone external">
+                        EXTERNAL INTERNET
+                    </div>
+
+
+                    <canvas
+                        id="networkCanvas"
+                    ></canvas>
+
+
+                    <div
+                        class="topology-empty"
+                        id="topologyEmpty"
+                    >
+                        Waiting for network telemetry...
+                    </div>
+
+
+                    <div class="topology-legend">
+
+                        <span class="legend-item">
+                            <i class="legend-dot legend-local"></i>
+                            Local
+                        </span>
+
+                        <span class="legend-item">
+                            <i class="legend-dot legend-sensor"></i>
+                            Sensor
+                        </span>
+
+                        <span class="legend-item">
+                            <i class="legend-dot legend-external"></i>
+                            External
+                        </span>
+
+                        <span class="legend-item">
+                            <i class="legend-dot legend-alert"></i>
+                            Suspicious
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 DEVICE INVENTORY
+            ================================================== -->
+
+            <section class="card inventory-card">
+
+                <div class="inventory-header">
+
+                    <div>
+
+                        <div class="inventory-title">
+                            DEVICE INVENTORY
+                        </div>
+
+                        <div class="inventory-subtitle">
+                            Live assets discovered by NETSENTINEL
+                        </div>
+
+                        <div
+                            class="inventory-count"
+                            id="inventoryCount"
+                            style="margin-top:6px;"
+                        >
+                            0 devices
+                        </div>
+
+                    </div>
+
+
+                    <div class="inventory-controls">
+
+                        <input
+                            type="text"
+                            id="deviceSearch"
+                            placeholder="Search IP, MAC or hostname..."
+                            autocomplete="off"
+                        >
+
+                        <select id="statusFilter">
+
+                            <option value="ALL">
+                                All Status
+                            </option>
+
+                            <option value="ONLINE">
+                                Online
+                            </option>
+
+                            <option value="SUSPICIOUS">
+                                Suspicious
+                            </option>
+
+                            <option value="CRITICAL">
+                                Critical
+                            </option>
+
+                            <option value="INACTIVE">
+                                Inactive
+                            </option>
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+
+                <div class="device-table-wrap">
+
+                    <table class="device-table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    IP Address
+                                </th>
+
+                                <th>
+                                    MAC Address
+                                </th>
+
+                                <th>
+                                    Hostname
+                                </th>
+
+                                <th>
+                                    Packets
+                                </th>
+
+                                <th>
+                                    Last Seen
+                                </th>
+
+                                <th>
+                                    Status
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="networkRows">
+
+                            <tr>
+
+                                <td
+                                    colspan="6"
+                                    class="empty-devices"
+                                >
+                                    Discovering network devices...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+        </main>
+
+    </div>
+
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/network.js"></script>
+
+</body>
+
+</html>

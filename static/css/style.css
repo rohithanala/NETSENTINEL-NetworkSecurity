@@ -1,0 +1,444 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    background: #030a10;
+    color: #e8f1f7;
+    font: 14px "Segoe UI", Arial, sans-serif;
+}
+
+/* =========================================================
+   CYBER BACKGROUND LAYER
+   ========================================================= */
+
+#cyberNetworkBackground {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    display: block;
+}
+
+/* =========================================================
+   APPLICATION LAYER
+   ========================================================= */
+
+#appLayer {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+}
+
+/* =========================================================
+   TOP NAVIGATION
+   ========================================================= */
+
+.top {
+    height: 64px;
+    background: rgba(5, 15, 23, 0.88);
+    border-bottom: 1px solid rgba(40, 180, 215, 0.22);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 24px;
+
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+
+    box-shadow:
+        0 4px 25px rgba(0, 0, 0, 0.28),
+        0 0 30px rgba(0, 150, 190, 0.04);
+}
+
+.brand {
+    font-weight: 900;
+    color: #62e6ff;
+    font-size: 20px;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+
+    text-shadow:
+        0 0 8px rgba(98, 230, 255, 0.45);
+}
+
+.nav {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.nav a {
+    color: #9eb2bf;
+    text-decoration: none;
+    padding: 8px 10px;
+    border-radius: 7px;
+
+    transition:
+        color 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.nav a:hover {
+    color: #62e6ff;
+    background: rgba(45, 190, 225, 0.08);
+
+    box-shadow:
+        0 0 14px rgba(45, 190, 225, 0.08);
+}
+
+.live-status {
+    display: flex;
+    align-items: center;
+    color: #9eb2bf;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+/* =========================================================
+   LIVE INDICATOR
+   ========================================================= */
+
+.dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+
+    border-radius: 50%;
+
+    background: #49e38a;
+
+    margin-right: 8px;
+
+    box-shadow:
+        0 0 5px rgba(73, 227, 138, 0.75),
+        0 0 14px rgba(73, 227, 138, 0.35);
+
+    animation: livePulse 1.8s infinite ease-in-out;
+}
+
+@keyframes livePulse {
+    0%,
+    100% {
+        opacity: 0.65;
+        transform: scale(0.9);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+}
+
+/* =========================================================
+   MAIN CONTENT
+   ========================================================= */
+
+.wrap {
+    max-width: 1500px;
+    margin: auto;
+    padding: 28px;
+}
+
+.hero {
+    margin-bottom: 22px;
+    padding: 22px;
+
+    background: rgba(5, 17, 26, 0.55);
+
+    border: 1px solid rgba(40, 180, 215, 0.16);
+    border-radius: 16px;
+
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+
+    box-shadow:
+        0 15px 45px rgba(0, 0, 0, 0.18),
+        inset 0 0 30px rgba(30, 180, 220, 0.025);
+}
+
+.hero h1 {
+    font-size: 32px;
+    margin: 5px 0 8px;
+
+    letter-spacing: -0.02em;
+
+    text-shadow:
+        0 0 18px rgba(98, 230, 255, 0.14);
+}
+
+.muted,
+.label {
+    color: #7f98a7;
+}
+
+.label {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+}
+
+/* =========================================================
+   DASHBOARD GRID
+   ========================================================= */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+/* =========================================================
+   CARDS
+   ========================================================= */
+
+.card {
+    position: relative;
+
+    background: rgba(7, 20, 30, 0.72);
+
+    border: 1px solid rgba(45, 170, 205, 0.18);
+
+    border-radius: 14px;
+
+    padding: 18px;
+
+    overflow: hidden;
+
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+
+    box-shadow:
+        0 10px 35px rgba(0, 0, 0, 0.18),
+        inset 0 0 35px rgba(40, 180, 220, 0.018);
+
+    transition:
+        border-color 0.2s ease,
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.card::before {
+    content: "";
+
+    position: absolute;
+
+    top: 0;
+    left: 0;
+    right: 0;
+
+    height: 1px;
+
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(98, 230, 255, 0.35),
+            transparent
+        );
+
+    opacity: 0.7;
+}
+
+.card:hover {
+    border-color: rgba(70, 205, 235, 0.32);
+
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 15px 40px rgba(0, 0, 0, 0.24),
+        0 0 25px rgba(40, 190, 220, 0.055);
+}
+
+.wide {
+    grid-column: span 2;
+}
+
+.full {
+    grid-column: 1 / -1;
+}
+
+/* =========================================================
+   METRICS
+   ========================================================= */
+
+.metric {
+    font-size: 28px;
+    font-weight: 800;
+    margin-top: 8px;
+
+    color: #e8f8ff;
+
+    text-shadow:
+        0 0 12px rgba(98, 230, 255, 0.12);
+}
+
+/* =========================================================
+   CHART
+   ========================================================= */
+
+.chart {
+    height: 300px;
+    position: relative;
+}
+
+.chart canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* =========================================================
+   TABLE
+   ========================================================= */
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    padding: 10px;
+    border-bottom: 1px solid rgba(25, 52, 66, 0.75);
+    text-align: left;
+}
+
+.table th {
+    color: #7f98a7;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.table td {
+    color: #c9d7de;
+}
+
+.table tbody tr {
+    transition: background 0.18s ease;
+}
+
+.table tbody tr:hover {
+    background: rgba(50, 190, 220, 0.045);
+}
+
+/* =========================================================
+   SCROLLBAR
+   ========================================================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(2, 9, 14, 0.8);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(70, 150, 175, 0.35);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(80, 190, 220, 0.55);
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 1100px) {
+    .grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .wide {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 900px) {
+    .top {
+        padding: 0 16px;
+    }
+
+    .nav {
+        gap: 5px;
+    }
+
+    .nav a {
+        padding: 7px;
+    }
+}
+
+@media (max-width: 700px) {
+    .wrap {
+        padding: 18px;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .wide,
+    .full {
+        grid-column: auto;
+    }
+
+    .hero h1 {
+        font-size: 25px;
+    }
+}
+
+@media (max-width: 600px) {
+    .nav {
+        display: none;
+    }
+
+    .top {
+        height: 58px;
+    }
+
+    .brand {
+        font-size: 18px;
+    }
+
+    .wrap {
+        padding: 12px;
+    }
+
+    .card {
+        padding: 15px;
+    }
+
+    .metric {
+        font-size: 25px;
+    }
+}
+
+/* =========================================================
+   ACCESSIBILITY / REDUCED MOTION
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}

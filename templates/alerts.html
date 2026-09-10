@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Security Alerts - NETSENTINEL</title>
+
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <style>
+        .alert-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .alert-stat {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .alert-stat .stat-number {
+            font-size: 30px;
+            font-weight: 900;
+            margin-top: 7px;
+        }
+
+        .alert-stat .stat-sub {
+            margin-top: 5px;
+            color: #718894;
+            font-size: 12px;
+        }
+
+        .alert-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .alert-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .alert-filters input,
+        .alert-filters select {
+            background: #08151e;
+            color: #dceaf2;
+            border: 1px solid #193442;
+            border-radius: 8px;
+            padding: 9px 12px;
+            outline: none;
+        }
+
+        .alert-filters input {
+            min-width: 220px;
+        }
+
+        .alert-filters input:focus,
+        .alert-filters select:focus {
+            border-color: #62e6ff;
+        }
+
+        .alert-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .alert-actions button {
+            background: #0b1822;
+            color: #dceaf2;
+            border: 1px solid #193442;
+            border-radius: 8px;
+            padding: 9px 13px;
+            cursor: pointer;
+        }
+
+        .alert-actions button:hover {
+            border-color: #62e6ff;
+        }
+
+        .alerts-table-wrap {
+            overflow-x: auto;
+        }
+
+        .alerts-table {
+            min-width: 1200px;
+        }
+
+        .alerts-table th,
+        .alerts-table td {
+            vertical-align: middle;
+        }
+
+        .alert-row {
+            transition: background .2s ease;
+        }
+
+        .alert-row:hover {
+            background: rgba(98, 230, 255, 0.045);
+        }
+
+        .new-alert {
+            animation: alertPulse .8s ease-out;
+        }
+
+        @keyframes alertPulse {
+            0% {
+                background: rgba(255, 75, 75, .18);
+            }
+
+            100% {
+                background: transparent;
+            }
+        }
+
+        .severity {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 76px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            border: 1px solid currentColor;
+        }
+
+        .severity-critical {
+            color: #ff5c5c;
+            background: rgba(255, 92, 92, .08);
+        }
+
+        .severity-high {
+            color: #ff9b62;
+            background: rgba(255, 155, 98, .08);
+        }
+
+        .severity-medium {
+            color: #ffd166;
+            background: rgba(255, 209, 102, .08);
+        }
+
+        .severity-low {
+            color: #70e0a1;
+            background: rgba(112, 224, 161, .08);
+        }
+
+        .severity-unknown {
+            color: #9eb2bf;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 9px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+        }
+
+        .status-new {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, .08);
+            border: 1px solid rgba(255, 107, 107, .3);
+        }
+
+        .status-acknowledged {
+            color: #ffd166;
+            background: rgba(255, 209, 102, .08);
+            border: 1px solid rgba(255, 209, 102, .3);
+        }
+
+        .status-resolved {
+            color: #70e0a1;
+            background: rgba(112, 224, 161, .08);
+            border: 1px solid rgba(112, 224, 161, .3);
+        }
+
+        .status-false_positive {
+            color: #8fa9b8;
+            background: rgba(143, 169, 184, .08);
+            border: 1px solid rgba(143, 169, 184, .3);
+        }
+
+        .ip-address {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .detection-name {
+            font-weight: 800;
+            color: #dceaf2;
+        }
+
+        .description {
+            max-width: 330px;
+            color: #8fa9b8;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .confidence {
+            font-family: Consolas, "Courier New", monospace;
+            font-weight: 800;
+        }
+
+        .confidence-bar {
+            width: 70px;
+            height: 5px;
+            background: #142631;
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: currentColor;
+            border-radius: inherit;
+        }
+
+        .alert-status-control {
+            background: #08151e;
+            color: #dceaf2;
+            border: 1px solid #193442;
+            border-radius: 7px;
+            padding: 6px 8px;
+            font-size: 11px;
+        }
+
+        .empty-alerts {
+            text-align: center;
+            padding: 55px 20px !important;
+            color: #718894;
+        }
+
+        .alert-error {
+            color: #ff6b6b;
+            text-align: center;
+            padding: 25px;
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #70e0a1;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .live-indicator i {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+            animation: liveBlink 1.2s infinite;
+        }
+
+        @keyframes liveBlink {
+            0%, 100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .35;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .alert-summary {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .alert-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .alert-filters input {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="cyberNetworkBackground"></canvas>
+
+    <div id="appLayer">
+
+        <header class="top">
+
+            <a class="brand" href="/dashboard">
+                NETSENTINEL
+            </a>
+
+            <nav class="nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/live-traffic">Traffic</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/network">Network</a>
+                <a href="/analytics">Analytics</a>
+                <a href="/settings">Settings</a>
+            </nav>
+
+            <span class="live-indicator">
+                <i></i>
+                IDS LIVE
+            </span>
+
+        </header>
+
+        <main class="wrap">
+
+            <div class="hero">
+
+                <div class="label">
+                    SECURITY OPERATIONS CENTER
+                </div>
+
+                <h1>
+                    Security Alert Center
+                </h1>
+
+                <p class="muted">
+                    Real-time intrusion detection and security event monitoring.
+                </p>
+
+            </div>
+
+            <!-- Alert statistics -->
+
+            <section class="alert-summary">
+
+                <div class="card alert-stat">
+                    <div class="label">Total Alerts</div>
+                    <div class="stat-number" id="totalAlerts">0</div>
+                    <div class="stat-sub">Detected security events</div>
+                </div>
+
+                <div class="card alert-stat">
+                    <div class="label">Critical / High</div>
+                    <div class="stat-number" id="highAlerts">0</div>
+                    <div class="stat-sub">Priority threats</div>
+                </div>
+
+                <div class="card alert-stat">
+                    <div class="label">Medium</div>
+                    <div class="stat-number" id="mediumAlerts">0</div>
+                    <div class="stat-sub">Requires investigation</div>
+                </div>
+
+                <div class="card alert-stat">
+                    <div class="label">New</div>
+                    <div class="stat-number" id="newAlerts">0</div>
+                    <div class="stat-sub">Unreviewed alerts</div>
+                </div>
+
+            </section>
+
+            <!-- Alert console -->
+
+            <section class="card">
+
+                <div class="alert-toolbar">
+
+                    <div>
+
+                        <div class="label">
+                            IDS EVENT STREAM
+                        </div>
+
+                        <div class="muted" style="margin-top:5px;">
+                            Automatically updating security events
+                        </div>
+
+                    </div>
+
+                    <div class="alert-actions">
+
+                        <button id="refreshButton">
+                            Refresh
+                        </button>
+
+                        <button id="clearFiltersButton">
+                            Clear Filters
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <div class="alert-filters">
+
+                    <input
+                        type="text"
+                        id="alertSearch"
+                        placeholder="Search IP, detection or description..."
+                    >
+
+                    <select id="severityFilter">
+                        <option value="ALL">All Severity</option>
+                        <option value="CRITICAL">Critical</option>
+                        <option value="HIGH">High</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="LOW">Low</option>
+                    </select>
+
+                    <select id="detectionFilter">
+                        <option value="ALL">All Detections</option>
+                    </select>
+
+                    <select id="statusFilter">
+                        <option value="ALL">All Status</option>
+                        <option value="new">New</option>
+                        <option value="acknowledged">Acknowledged</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="false_positive">False Positive</option>
+                    </select>
+
+                </div>
+
+            </section>
+
+            <br>
+
+            <!-- Alert table -->
+
+            <section class="card">
+
+                <div class="alerts-table-wrap">
+
+                    <table class="table alerts-table">
+
+                        <thead>
+
+                            <tr>
+                                <th>Time</th>
+                                <th>Detection</th>
+                                <th>Source</th>
+                                <th>Destination</th>
+                                <th>Protocol</th>
+                                <th>Severity</th>
+                                <th>Confidence</th>
+                                <th>Description</th>
+                                <th>Status</th>
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="alertsRows">
+
+                            <tr>
+                                <td colspan="9" class="empty-alerts">
+                                    Loading security alerts...
+                                </td>
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+        </main>
+
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/alerts.js"></script>
+
+</body>
+
+</html>

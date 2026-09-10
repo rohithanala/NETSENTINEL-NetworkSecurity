@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Live Traffic - NETSENTINEL</title>
+
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <style>
+        .traffic-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .traffic-controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .traffic-controls button,
+        .traffic-controls select {
+            background: #0b1822;
+            color: #dceaf2;
+            border: 1px solid #193442;
+            border-radius: 8px;
+            padding: 9px 13px;
+            cursor: pointer;
+        }
+
+        .traffic-controls button:hover {
+            border-color: #62e6ff;
+        }
+
+        .traffic-meta {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
+
+        .traffic-stat {
+            min-width: 110px;
+        }
+
+        .traffic-stat .value {
+            font-size: 20px;
+            font-weight: 800;
+            margin-top: 4px;
+        }
+
+        .traffic-table-wrap {
+            overflow-x: auto;
+        }
+
+        .traffic-table {
+            min-width: 900px;
+        }
+
+        .traffic-table tr.live-row {
+            animation: rowIn .25s ease-out;
+        }
+
+        .traffic-table tr:hover {
+            background: rgba(98, 230, 255, 0.05);
+        }
+
+        .protocol {
+            font-weight: 800;
+            letter-spacing: .04em;
+        }
+
+        .protocol.tcp {
+            color: #62e6ff;
+        }
+
+        .protocol.udp {
+            color: #b69cff;
+        }
+
+        .protocol.icmp {
+            color: #ffd166;
+        }
+
+        .protocol.arp {
+            color: #70e0a1;
+        }
+
+        .protocol.other {
+            color: #9eb2bf;
+        }
+
+        .ip {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .port {
+            color: #8fa9b8;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+        }
+
+        .flag {
+            font-family: Consolas, "Courier New", monospace;
+            font-weight: 700;
+        }
+
+        .traffic-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #70e0a1;
+        }
+
+        .traffic-status.paused {
+            color: #ffd166;
+        }
+
+        .traffic-status .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 45px 20px !important;
+            color: #718894;
+        }
+
+        @keyframes rowIn {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 700px) {
+            .traffic-meta {
+                width: 100%;
+            }
+
+            .traffic-stat {
+                min-width: 90px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="cyberNetworkBackground"></canvas>
+
+    <div id="appLayer">
+
+        <header class="top">
+
+            <a class="brand" href="/dashboard">
+                NETSENTINEL
+            </a>
+
+            <nav class="nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/live-traffic">Traffic</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/network">Network</a>
+                <a href="/analytics">Analytics</a>
+                <a href="/settings">Settings</a>
+            </nav>
+
+            <span class="traffic-status" id="trafficStatus">
+                <i class="status-dot"></i>
+                <span id="trafficStatusText">LIVE</span>
+            </span>
+
+        </header>
+
+        <main class="wrap">
+
+            <div class="hero">
+                <div class="label">NETWORK TELEMETRY</div>
+
+                <h1>Live Traffic Monitor</h1>
+
+                <p class="muted">
+                    Real-time packet telemetry captured by NETSENTINEL.
+                </p>
+            </div>
+
+            <!-- Statistics -->
+
+            <section class="grid">
+
+                <div class="card traffic-stat">
+                    <div class="label">Visible Packets</div>
+                    <div class="value" id="packetCount">0</div>
+                </div>
+
+                <div class="card traffic-stat">
+                    <div class="label">Total Bytes</div>
+                    <div class="value" id="byteCount">0 B</div>
+                </div>
+
+                <div class="card traffic-stat">
+                    <div class="label">TCP</div>
+                    <div class="value" id="tcpCount">0</div>
+                </div>
+
+                <div class="card traffic-stat">
+                    <div class="label">UDP</div>
+                    <div class="value" id="udpCount">0</div>
+                </div>
+
+                <!-- Toolbar -->
+
+                <div class="card full">
+
+                    <div class="traffic-toolbar">
+
+                        <div class="traffic-meta">
+
+                            <div>
+                                <div class="label">Capture</div>
+
+                                <div class="traffic-status" id="captureState">
+                                    <i class="status-dot"></i>
+                                    <span>CHECKING</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="label">Interface</div>
+                                <div class="value ip" id="interfaceName">
+                                    —
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="label">Last Update</div>
+                                <div class="value" id="lastUpdate">
+                                    —
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="traffic-controls">
+
+                            <select id="protocolFilter">
+                                <option value="ALL">All Protocols</option>
+                                <option value="TCP">TCP</option>
+                                <option value="UDP">UDP</option>
+                                <option value="ICMP">ICMP</option>
+                                <option value="ARP">ARP</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+
+                            <button id="pauseButton">
+                                Pause
+                            </button>
+
+                            <button id="clearButton">
+                                Clear
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- Traffic Table -->
+
+                <div class="card full">
+
+                    <div class="label">
+                        LIVE PACKET STREAM
+                    </div>
+
+                    <div class="traffic-table-wrap">
+
+                        <table class="table traffic-table">
+
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Source</th>
+                                    <th>Destination</th>
+                                    <th>Protocol</th>
+                                    <th>Ports</th>
+                                    <th>Flags</th>
+                                    <th>Bytes</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="live_trafficRows">
+
+                                <tr>
+                                    <td colspan="7" class="empty-state">
+                                        Waiting for live traffic...
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+        </main>
+
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/live_traffic.js"></script>
+
+</body>
+</html>
