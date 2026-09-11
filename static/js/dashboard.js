@@ -7,16 +7,7 @@
  * Pure HTML5 Canvas dashboard visualization.
  * Chart.js is NOT required.
  *
- * Features:
- * - Live PPS graph
- * - Live BPS graph
- * - Protocol distribution
- * - Real packet telemetry
- * - Live statistics
- * - Responsive Canvas rendering
- * - Continuous graph updates
- * - Security alerts
- * - Traffic table
+ * Client-isolated dashboard telemetry.
  * ============================================================
  */
 
@@ -40,7 +31,31 @@
 
     const GRAPH_REDRAW_MS = 100;
 
-    const GRAPH_SAMPLE_MS = 1000;
+
+    /* ============================================================
+       CLIENT ID
+       ============================================================ */
+
+    const CLIENT_ID =
+        String(
+            window.NETSENTINEL_CLIENT_ID ||
+            window.NETSENTINEL?.clientId ||
+            ""
+        ).trim();
+
+
+    const CLIENT_HEADER =
+        String(
+            window.NETSENTINEL_CLIENT_HEADER ||
+            window.NETSENTINEL?.clientHeader ||
+            "X-NETSENTINEL-CLIENT-ID"
+        );
+
+
+    console.info(
+        "NETSENTINEL dashboard client:",
+        CLIENT_ID || "not available"
+    );
 
 
     /* ============================================================
@@ -79,7 +94,6 @@
        ============================================================ */
 
     function el(id) {
-
         return document.getElementById(id);
     }
 
@@ -95,21 +109,41 @@
 
 
     /* ============================================================
+       API HEADERS
+       ============================================================ */
+
+    function getApiHeaders() {
+
+        const headers = {
+            "Accept": "application/json"
+        };
+
+
+        if (CLIENT_ID) {
+            headers[CLIENT_HEADER] =
+                CLIENT_ID;
+        }
+
+
+        return headers;
+    }
+
+
+    /* ============================================================
        API
        ============================================================ */
 
     async function getJSON(url) {
 
-        const response = await fetch(
-            url,
-            {
-                method: "GET",
-                cache: "no-store",
-                headers: {
-                    "Accept": "application/json"
+        const response =
+            await fetch(
+                url,
+                {
+                    method: "GET",
+                    cache: "no-store",
+                    headers: getApiHeaders()
                 }
-            }
-        );
+            );
 
 
         const body =
@@ -127,16 +161,6 @@
         }
 
 
-        /*
-         * Support both:
-         *
-         * { data: [...] }
-         *
-         * and
-         *
-         * [...]
-         */
-
         if (
             body &&
             body.data !== undefined
@@ -147,6 +171,48 @@
 
 
         return body;
+    }
+
+
+    /* ============================================================
+       CLIENT DATA VALIDATION
+       ============================================================ */
+
+    function belongsToCurrentClient(record) {
+
+        if (!CLIENT_ID) {
+            return true;
+        }
+
+
+        if (
+            record &&
+            record.client_id !== undefined &&
+            record.client_id !== null
+        ) {
+
+            return (
+                String(
+                    record.client_id
+                ) === CLIENT_ID
+            );
+        }
+
+
+        return true;
+    }
+
+
+    function filterClientRecords(records) {
+
+        if (!Array.isArray(records)) {
+            return [];
+        }
+
+
+        return records.filter(
+            belongsToCurrentClient
+        );
     }
 
 
@@ -196,8 +262,9 @@
 
 
         const hasTimezone =
-            /(?:Z|[+-]\d{2}:?\d{2})$/i
-                .test(raw);
+            /(?:Z|[+-]\d{2}:?\d{2})$/i.test(
+                raw
+            );
 
 
         const date =
@@ -265,17 +332,12 @@
             );
 
 
-        if (
-            seconds < 2
-        ) {
-
+        if (seconds < 2) {
             return "just now";
         }
 
 
-        if (
-            seconds < 60
-        ) {
+        if (seconds < 60) {
 
             return `${Math.floor(
                 seconds
@@ -283,9 +345,7 @@
         }
 
 
-        if (
-            seconds < 3600
-        ) {
+        if (seconds < 3600) {
 
             return `${Math.floor(
                 seconds / 60
@@ -293,9 +353,7 @@
         }
 
 
-        if (
-            seconds < 86400
-        ) {
+        if (seconds < 86400) {
 
             return `${Math.floor(
                 seconds / 3600
@@ -393,9 +451,7 @@
             );
 
 
-        if (
-            n < 1000
-        ) {
+        if (n < 1000) {
 
             return number(
                 n,
@@ -404,9 +460,7 @@
         }
 
 
-        if (
-            n < 1000000
-        ) {
+        if (n < 1000000) {
 
             return `${(
                 n / 1000
@@ -414,9 +468,7 @@
         }
 
 
-        if (
-            n < 1000000000
-        ) {
+        if (n < 1000000000) {
 
             return `${(
                 n / 1000000
@@ -434,9 +486,7 @@
        BADGES
        ============================================================ */
 
-    function severityBadge(
-        severity
-    ) {
+    function severityBadge(severity) {
 
         const value =
             String(
@@ -454,9 +504,7 @@
     }
 
 
-    function statusBadge(
-        status
-    ) {
+    function statusBadge(status) {
 
         const value =
             String(
@@ -516,6 +564,13 @@
             );
 
 
+        const idsRunning =
+            String(
+                stats.ids_status || ""
+            ).toLowerCase() ===
+            "running";
+
+
         const mode =
             String(
                 stats.mode ||
@@ -523,19 +578,16 @@
             ).toUpperCase();
 
 
-        /*
-         * LIVE mode requires monitoring + capture.
-         *
-         * This is only for the status labels.
-         * The graph itself can still display
-         * historical/live packet records.
-         */
-
         const running =
             mode === "LIVE"
                 ? monitoring &&
-                  captureRunning
-                : monitoring;
+                  (
+                      captureRunning ||
+                      idsRunning
+                  )
+                : monitoring ||
+                  captureRunning ||
+                  idsRunning;
 
 
         setText(
@@ -892,9 +944,7 @@
        TRAFFIC DATA HELPERS
        ============================================================ */
 
-    function getRecordBytes(
-        record
-    ) {
+    function getRecordBytes(record) {
 
         return Math.max(
             0,
@@ -908,9 +958,7 @@
     }
 
 
-    function getTrafficTimestamp(
-        record
-    ) {
+    function getTrafficTimestamp(record) {
 
         const date =
             parseTimestamp(
@@ -925,7 +973,7 @@
 
 
     /* ============================================================
-       BUILD TRAFFIC HISTORY DIRECTLY FROM PACKETS
+       BUILD PACKET HISTORY
        ============================================================ */
 
     function buildPacketHistory() {
@@ -959,20 +1007,6 @@
         }
 
 
-        /*
-         * IMPORTANT:
-         *
-         * Do NOT require the packet timestamp to be
-         * inside exactly the last 30 seconds.
-         *
-         * We first find the newest packet timestamp.
-         *
-         * This allows the graph to display the actual
-         * packet history returned by the API even if
-         * the database timestamps are slightly behind
-         * the browser clock.
-         */
-
         const timestamps =
             trafficRecords
                 .map(
@@ -1004,12 +1038,6 @@
             );
 
 
-        /*
-         * Use browser time when packets are genuinely
-         * live. Otherwise use newest packet time as the
-         * graph reference.
-         */
-
         const clockDifference =
             Math.abs(
                 now -
@@ -1023,10 +1051,6 @@
                 ? now
                 : newest;
 
-
-        /*
-         * One bucket represents one second.
-         */
 
         trafficRecords.forEach(
             record => {
@@ -1053,23 +1077,8 @@
                     );
 
 
-                /*
-                 * Ignore packets that are ahead of
-                 * the reference clock.
-                 */
-
                 if (
-                    age < 0
-                ) {
-                    return;
-                }
-
-
-                /*
-                 * Keep the last 30 seconds.
-                 */
-
-                if (
+                    age < 0 ||
                     age >= GRAPH_POINTS
                 ) {
                     return;
@@ -1145,13 +1154,6 @@
             );
 
 
-        /*
-         * Always record the sample.
-         *
-         * Even zero is useful because it allows
-         * the graph to fall naturally.
-         */
-
         rateHistory.push(
             {
                 timestamp: now,
@@ -1189,13 +1191,6 @@
             packetHistory.bps.slice();
 
 
-        /*
-         * Overlay live statistics.
-         *
-         * Only use non-zero live values so a stopped
-         * capture does not erase packet history.
-         */
-
         rateHistory.forEach(
             sample => {
 
@@ -1214,7 +1209,6 @@
                     age < 0 ||
                     age >= GRAPH_POINTS
                 ) {
-
                     return;
                 }
 
@@ -1250,12 +1244,6 @@
             }
         );
 
-
-        /*
-         * Current live statistics are used as the
-         * final point when there is no packet count
-         * in the current bucket.
-         */
 
         const currentPps =
             Number(
@@ -1348,10 +1336,6 @@
                 2
             );
 
-
-        /*
-         * Reset physical resolution.
-         */
 
         canvas.width =
             Math.floor(
@@ -1483,15 +1467,6 @@
                 : graph.bps;
 
 
-        /*
-         * Scale.
-         *
-         * The previous minimum scale of 5 could make
-         * small traffic appear almost invisible.
-         *
-         * We dynamically scale according to the data.
-         */
-
         const maximum =
             Math.max(
                 ...values,
@@ -1512,21 +1487,8 @@
             );
 
 
-        /*
-         * Give the graph some vertical headroom.
-         */
+        scale *= 1.20;
 
-        if (
-            scale > 0
-        ) {
-
-            scale *= 1.20;
-        }
-
-
-        /*
-         * Background.
-         */
 
         const background =
             ctx.createLinearGradient(
@@ -1561,10 +1523,6 @@
         );
 
 
-        /*
-         * Plot border.
-         */
-
         ctx.strokeStyle =
             "rgba(100,180,210,0.12)";
 
@@ -1580,10 +1538,6 @@
             plotHeight
         );
 
-
-        /*
-         * Horizontal grid.
-         */
 
         for (
             let i = 0;
@@ -1667,10 +1621,6 @@
         }
 
 
-        /*
-         * Vertical grid.
-         */
-
         for (
             let i = 0;
             i < GRAPH_POINTS;
@@ -1713,20 +1663,12 @@
         }
 
 
-        /*
-         * Check for usable data.
-         */
-
         const hasTraffic =
             values.some(
                 value =>
                     Number(value) > 0
             );
 
-
-        /*
-         * Empty state.
-         */
 
         if (
             !hasTraffic
@@ -1776,10 +1718,6 @@
         }
 
 
-        /*
-         * Convert values into points.
-         */
-
         const points =
             values.map(
                 (
@@ -1825,10 +1763,6 @@
                 }
             );
 
-
-        /*
-         * Area fill.
-         */
 
         const areaGradient =
             ctx.createLinearGradient(
@@ -1898,10 +1832,6 @@
         ctx.fill();
 
 
-        /*
-         * Main line.
-         */
-
         ctx.beginPath();
 
 
@@ -1919,7 +1849,6 @@
                         point.x,
                         point.y
                     );
-
 
                     return;
                 }
@@ -1993,17 +1922,12 @@
             0;
 
 
-        /*
-         * Highlight all non-zero points subtly.
-         */
-
         points.forEach(
             point => {
 
                 if (
                     point.value <= 0
                 ) {
-
                     return;
                 }
 
@@ -2028,10 +1952,6 @@
             }
         );
 
-
-        /*
-         * Highlight current point.
-         */
 
         const latest =
             points[
@@ -2074,10 +1994,6 @@
                 0;
         }
 
-
-        /*
-         * Current value.
-         */
 
         ctx.fillStyle =
             "#a9eaff";
@@ -2304,10 +2220,6 @@
             );
 
 
-        /*
-         * Fallback to packet telemetry.
-         */
-
         if (
             total === 0 &&
             trafficRecords.length > 0
@@ -2475,10 +2387,6 @@
         );
 
 
-        /*
-         * Empty state.
-         */
-
         if (
             total === 0
         ) {
@@ -2558,7 +2466,6 @@
                     if (
                         value <= 0
                     ) {
-
                         return;
                     }
 
@@ -2580,8 +2487,7 @@
                         cy,
                         radius,
                         start,
-                        start +
-                        angle
+                        start + angle
                     );
 
 
@@ -2617,10 +2523,6 @@
                 }
             );
 
-
-            /*
-             * Center value.
-             */
 
             ctx.textAlign =
                 "center";
@@ -2660,10 +2562,6 @@
             );
         }
 
-
-        /*
-         * Legend.
-         */
 
         labels.forEach(
             (
@@ -2762,7 +2660,6 @@
         if (
             dashboardBusy
         ) {
-
             return;
         }
 
@@ -2782,10 +2679,6 @@
             let analytics = {};
 
 
-            /*
-             * STATS
-             */
-
             try {
 
                 stats =
@@ -2801,10 +2694,6 @@
                 );
             }
 
-
-            /*
-             * TRAFFIC
-             */
 
             try {
 
@@ -2822,10 +2711,6 @@
             }
 
 
-            /*
-             * CAPTURE
-             */
-
             try {
 
                 capture =
@@ -2842,10 +2727,6 @@
             }
 
 
-            /*
-             * ANALYTICS
-             */
-
             try {
 
                 analytics =
@@ -2855,12 +2736,6 @@
 
             } catch (error) {
 
-                /*
-                 * Analytics endpoint is optional.
-                 * Do not break the dashboard if it
-                 * is unavailable.
-                 */
-
                 console.warn(
                     "NETSENTINEL analytics unavailable:",
                     error
@@ -2868,13 +2743,46 @@
             }
 
 
-            latestAnalytics =
-                analytics || {};
+            /*
+             * Only accept stats belonging to this browser.
+             */
+
+            if (
+                CLIENT_ID &&
+                stats &&
+                stats.client_id &&
+                String(
+                    stats.client_id
+                ) !== CLIENT_ID
+            ) {
+
+                console.error(
+                    "NETSENTINEL: Stats client mismatch.",
+                    {
+                        expected: CLIENT_ID,
+                        received: stats.client_id
+                    }
+                );
+
+                latestStats = {};
+
+            } else {
+
+                latestStats =
+                    stats || {};
+            }
+
+
+            latestCapture =
+                capture || {};
 
 
             /*
-             * TRAFFIC RECORDS
+             * Extract traffic records.
              */
+
+            let records = [];
+
 
             if (
                 Array.isArray(
@@ -2882,7 +2790,7 @@
                 )
             ) {
 
-                trafficRecords =
+                records =
                     traffic;
 
             } else if (
@@ -2891,48 +2799,36 @@
                 )
             ) {
 
-                trafficRecords =
+                records =
                     traffic.records;
-
-            } else {
-
-                trafficRecords =
-                    [];
             }
 
 
-            /*
-             * STATS
-             */
+            trafficRecords =
+                filterClientRecords(
+                    records
+                );
+
+
+            latestAnalytics =
+                analytics || {};
+
 
             updateStats(
-                stats,
-                capture
+                latestStats,
+                latestCapture
             );
 
-
-            /*
-             * LIVE SAMPLE
-             */
 
             addCurrentRateSample();
 
 
-            /*
-             * TABLES
-             */
-
             renderTraffic();
 
-
-            /*
-             * GRAPHS
-             */
 
             drawTrafficChart();
 
             drawProtocolChart();
-
 
         } catch (error) {
 
@@ -2970,7 +2866,6 @@
         if (
             alertsBusy
         ) {
-
             return;
         }
 
@@ -2987,13 +2882,16 @@
                 );
 
 
+            let records = [];
+
+
             if (
                 Array.isArray(
                     response
                 )
             ) {
 
-                alerts =
+                records =
                     response;
 
             } else if (
@@ -3002,18 +2900,18 @@
                 )
             ) {
 
-                alerts =
+                records =
                     response.records;
-
-            } else {
-
-                alerts =
-                    [];
             }
 
 
-            renderAlerts();
+            alerts =
+                filterClientRecords(
+                    records
+                );
 
+
+            renderAlerts();
 
         } catch (error) {
 
@@ -3092,7 +2990,6 @@
                         selected
                     )
                 ) {
-
                     return;
                 }
 
@@ -3159,49 +3056,6 @@
                     );
             }
         );
-    }
-
-
-    /* ============================================================
-       GRAPH ANIMATION
-       ============================================================ */
-
-    function startGraphAnimation() {
-
-        if (
-            chartTimer
-        ) {
-
-            clearInterval(
-                chartTimer
-            );
-        }
-
-
-        chartTimer =
-            setInterval(
-                () => {
-
-                    /*
-                     * Only add a new sample when
-                     * a new second has started.
-                     */
-
-                    addCurrentRateSample();
-
-
-                    /*
-                     * Redraw frequently for a
-                     * smooth visual refresh.
-                     */
-
-                    drawTrafficChart();
-
-                    drawProtocolChart();
-
-                },
-                GRAPH_REDRAW_MS
-            );
     }
 
 
@@ -3282,15 +3136,17 @@
         );
 
 
+        console.info(
+            "NETSENTINEL: Dashboard client:",
+            CLIENT_ID || "unknown"
+        );
+
+
         initMetricToggle();
 
 
         initResize();
 
-
-        /*
-         * Draw immediately.
-         */
 
         drawTrafficChart();
 
@@ -3302,27 +3158,12 @@
         renderAlerts();
 
 
-        /*
-         * Load data immediately.
-         */
-
         refreshDashboard();
 
         refreshAlerts();
 
 
-        /*
-         * Start polling.
-         */
-
         startPolling();
-
-
-        /*
-         * Start graph animation.
-         */
-
-        startGraphAnimation();
 
 
         console.info(
@@ -3352,6 +3193,5 @@
 
         init();
     }
-
 
 })();

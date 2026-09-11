@@ -18,17 +18,23 @@ from .capture import get_manager
 # ============================================================
 # NETSENTINEL
 # DEMO TRAFFIC GENERATOR
+#
+# Multi-client DEMO mode.
+#
+# Every browser/client gets its own DEMO worker and client_id.
 # ============================================================
 
 
-_demo_thread = None
-_demo_running = False
+_demo_threads: dict[str, threading.Thread] = {}
+_demo_running: dict[str, bool] = {}
+
 _demo_lock = threading.RLock()
 
 
 # ============================================================
 # DEMO NETWORK
 # ============================================================
+
 
 DEMO_DEVICES = [
     {
@@ -94,11 +100,97 @@ EXTERNAL_SERVICES = [
 
 
 # ============================================================
+# CLIENT-SPECIFIC DEMO DEVICES
+# ============================================================
+
+
+def _client_devices(client_id: str) -> list[dict]:
+    """
+    Create a deterministic DEMO network for a client.
+
+    Different client IDs produce different private TEST-network
+    addresses, so separate browsers do not see the exact same
+    simulated device addresses.
+    """
+
+    client_id = str(
+        client_id or "legacy"
+    ).strip()
+
+    if not client_id:
+        client_id = "legacy"
+
+    seed = sum(
+        ord(character) * (index + 1)
+        for index, character in enumerate(client_id)
+    )
+
+    rng = random.Random(seed)
+
+    network_octet = rng.randint(
+        10,
+        220,
+    )
+
+    names = [
+        "WORKSTATION-01",
+        "WORKSTATION-02",
+        "DEV-LAPTOP",
+        "FILE-SERVER",
+        "DATABASE-SERVER",
+        "SECURITY-CLIENT",
+    ]
+
+    devices = []
+
+    for index, name in enumerate(
+        names,
+        start=1,
+    ):
+
+        mac_1 = (
+            seed + index * 17
+        ) % 256
+
+        mac_2 = (
+            seed + index * 31
+        ) % 256
+
+        mac_3 = (
+            seed + index * 47
+        ) % 256
+
+        mac = (
+            f"02:{network_octet:02x}:"
+            f"{index:02x}:"
+            f"{mac_1:02x}:"
+            f"{mac_2:02x}:"
+            f"{mac_3:02x}"
+        )
+
+        devices.append(
+            {
+                "ip": (
+                    f"10.{network_octet}."
+                    f"{index}.10"
+                ),
+                "mac": mac,
+                "name": name,
+            }
+        )
+
+    return devices
+
+
+# ============================================================
 # PACKET BUILDERS
 # ============================================================
 
 
-def _ether(src_mac, dst_mac):
+def _ether(
+    src_mac,
+    dst_mac,
+):
     return Ether(
         src=src_mac,
         dst=dst_mac,
@@ -200,9 +292,11 @@ def _icmp_packet(
 # ============================================================
 
 
-def _generate_normal_packet():
+def _generate_normal_packet(
+    devices,
+):
     source = random.choice(
-        DEMO_DEVICES
+        devices
     )
 
     traffic_type = random.choice(
@@ -216,14 +310,22 @@ def _generate_normal_packet():
     )
 
     if traffic_type == "icmp":
+
         destination = random.choice(
-            DEMO_DEVICES
+            devices
         )
 
-        if destination["ip"] == source["ip"]:
+        attempts = 0
+
+        while (
+            destination["ip"] == source["ip"]
+            and attempts < 10
+        ):
             destination = random.choice(
-                DEMO_DEVICES
+                devices
             )
+
+            attempts += 1
 
         return _icmp_packet(
             source_ip=source["ip"],
@@ -233,6 +335,7 @@ def _generate_normal_packet():
         )
 
     if traffic_type == "udp":
+
         service = random.choice(
             EXTERNAL_SERVICES[:2]
         )
@@ -269,13 +372,15 @@ def _generate_normal_packet():
 # ============================================================
 
 
-def _generate_internal_packet():
+def _generate_internal_packet(
+    devices,
+):
     source = random.choice(
-        DEMO_DEVICES[:3]
+        devices[:3]
     )
 
     destination = random.choice(
-        DEMO_DEVICES[3:]
+        devices[3:]
     )
 
     destination_port = random.choice(
@@ -316,7 +421,7 @@ def _generate_port_scan(
     ports = list(
         range(
             20,
-            20 + 25,
+            45,
         )
     )
 
@@ -325,6 +430,7 @@ def _generate_port_scan(
     )
 
     for port in ports:
+
         packets.append(
             _tcp_packet(
                 source_ip=source["ip"],
@@ -354,6 +460,7 @@ def _generate_connection_burst(
     packets = []
 
     for _ in range(65):
+
         destination_port = random.choice(
             [
                 80,
@@ -389,19 +496,51 @@ def _generate_connection_burst(
 def _emit_packet(
     packet,
     manager,
+    client_id,
 ):
+    """
+    Pass the synthetic packet through the normal capture
+    processing pipeline while preserving the client namespace.
+    """
+
     try:
+
         manager.process_packet(
             packet,
             is_demo=True,
+            client_id=client_id,
         )
+
     except Exception as exc:
+
         try:
+
             manager.set_error(
                 exc
             )
+
         except Exception:
+
             pass
+
+
+# ============================================================
+# CLIENT RUNNING STATE
+# ============================================================
+
+
+def _is_client_running(
+    client_id: str,
+) -> bool:
+
+    with _demo_lock:
+
+        return bool(
+            _demo_running.get(
+                client_id,
+                False,
+            )
+        )
 
 
 # ============================================================
@@ -411,20 +550,31 @@ def _emit_packet(
 
 def _run_demo_cycle(
     manager,
+    client_id,
 ):
+    devices = _client_devices(
+        client_id
+    )
+
     # --------------------------------------------------------
     # Normal mixed traffic
     # --------------------------------------------------------
 
     for _ in range(12):
-        if not _demo_running:
+
+        if not _is_client_running(
+            client_id
+        ):
             return
 
-        packet = _generate_normal_packet()
+        packet = _generate_normal_packet(
+            devices
+        )
 
         _emit_packet(
             packet,
             manager,
+            client_id,
         )
 
         time.sleep(
@@ -436,14 +586,20 @@ def _run_demo_cycle(
     # --------------------------------------------------------
 
     for _ in range(8):
-        if not _demo_running:
+
+        if not _is_client_running(
+            client_id
+        ):
             return
 
-        packet = _generate_internal_packet()
+        packet = _generate_internal_packet(
+            devices
+        )
 
         _emit_packet(
             packet,
             manager,
+            client_id,
         )
 
         time.sleep(
@@ -455,15 +611,31 @@ def _run_demo_cycle(
     # --------------------------------------------------------
 
     source = random.choice(
-        DEMO_DEVICES
+        devices
     )
 
     destination = random.choice(
-        DEMO_DEVICES
+        devices
     )
 
+    attempts = 0
+
+    while (
+        destination["ip"] == source["ip"]
+        and attempts < 10
+    ):
+
+        destination = random.choice(
+            devices
+        )
+
+        attempts += 1
+
     for _ in range(4):
-        if not _demo_running:
+
+        if not _is_client_running(
+            client_id
+        ):
             return
 
         packet = _icmp_packet(
@@ -476,6 +648,7 @@ def _run_demo_cycle(
         _emit_packet(
             packet,
             manager,
+            client_id,
         )
 
         time.sleep(
@@ -486,8 +659,8 @@ def _run_demo_cycle(
     # Port scan scenario
     # --------------------------------------------------------
 
-    scanner = DEMO_DEVICES[2]
-    target = DEMO_DEVICES[4]
+    scanner = devices[2]
+    target = devices[4]
 
     scan_packets = _generate_port_scan(
         scanner,
@@ -495,12 +668,16 @@ def _run_demo_cycle(
     )
 
     for packet in scan_packets:
-        if not _demo_running:
+
+        if not _is_client_running(
+            client_id
+        ):
             return
 
         _emit_packet(
             packet,
             manager,
+            client_id,
         )
 
         time.sleep(
@@ -511,8 +688,8 @@ def _run_demo_cycle(
     # High connection-rate scenario
     # --------------------------------------------------------
 
-    source = DEMO_DEVICES[1]
-    destination = DEMO_DEVICES[3]
+    source = devices[1]
+    destination = devices[3]
 
     burst_packets = _generate_connection_burst(
         source,
@@ -520,12 +697,16 @@ def _run_demo_cycle(
     )
 
     for packet in burst_packets:
-        if not _demo_running:
+
+        if not _is_client_running(
+            client_id
+        ):
             return
 
         _emit_packet(
             packet,
             manager,
+            client_id,
         )
 
         time.sleep(
@@ -534,28 +715,35 @@ def _run_demo_cycle(
 
 
 # ============================================================
-# DEMO LOOP
+# DEMO LOOP FOR ONE CLIENT
 # ============================================================
 
 
 def _demo_loop(
     app,
-    socketio=None,
+    socketio,
+    client_id,
 ):
-    global _demo_running
-
     try:
+
         manager = get_manager(
             app=app,
             socketio=socketio,
+            client_id=client_id,
         )
 
-        while _demo_running:
+        while _is_client_running(
+            client_id
+        ):
+
             _run_demo_cycle(
-                manager
+                manager,
+                client_id,
             )
 
-            if not _demo_running:
+            if not _is_client_running(
+                client_id
+            ):
                 break
 
             time.sleep(
@@ -563,10 +751,13 @@ def _demo_loop(
             )
 
     except Exception as exc:
+
         try:
+
             manager = get_manager(
                 app=app,
                 socketio=socketio,
+                client_id=client_id,
             )
 
             manager.set_error(
@@ -574,24 +765,26 @@ def _demo_loop(
             )
 
         except Exception:
+
             pass
 
     finally:
-        _demo_running = False
+
+        with _demo_lock:
+
+            _demo_running[
+                client_id
+            ] = False
 
 
 # ============================================================
-# START DEMO
+# CONFIGURATION CHECK
 # ============================================================
 
 
-def start_demo_if_enabled(
+def _demo_enabled(
     app,
-    socketio=None,
 ):
-    global _demo_thread
-    global _demo_running
-
     real_app = getattr(
         app,
         "_get_current_object",
@@ -626,6 +819,7 @@ def start_demo_if_enabled(
         monitoring_enabled,
         str,
     ):
+
         monitoring_enabled = (
             monitoring_enabled.lower()
             in {
@@ -637,15 +831,68 @@ def start_demo_if_enabled(
             }
         )
 
+    enabled = (
+        mode in {
+            "DEMO",
+            "SIMULATION",
+            "TEST",
+        }
+        and bool(
+            monitoring_enabled
+        )
+    )
+
+    return (
+        enabled,
+        mode,
+        bool(
+            monitoring_enabled
+        ),
+        real_app,
+    )
+
+
+# ============================================================
+# START DEMO FOR ONE CLIENT
+# ============================================================
+
+
+def start_demo_for_client(
+    app,
+    client_id,
+    socketio=None,
+):
+    """
+    Start an isolated DEMO worker for a specific client.
+    """
+
+    (
+        enabled,
+        mode,
+        monitoring_enabled,
+        real_app,
+    ) = _demo_enabled(
+        app
+    )
+
+    client_id = str(
+        client_id or "legacy"
+    ).strip()
+
+    if not client_id:
+        client_id = "legacy"
+
     if mode not in {
         "DEMO",
         "SIMULATION",
         "TEST",
     }:
+
         return {
             "success": True,
             "started": False,
             "mode": mode,
+            "client_id": client_id,
             "message": (
                 "Demo generator not started "
                 "because application mode is "
@@ -654,67 +901,171 @@ def start_demo_if_enabled(
         }
 
     if not monitoring_enabled:
+
         return {
             "success": True,
             "started": False,
             "mode": mode,
+            "client_id": client_id,
             "message": (
                 "Demo generator not started "
                 "because monitoring is disabled."
             ),
         }
 
+    if not enabled:
+
+        return {
+            "success": True,
+            "started": False,
+            "mode": mode,
+            "client_id": client_id,
+            "message": (
+                "Demo generator is not enabled."
+            ),
+        }
+
     with _demo_lock:
-        if _demo_running:
+
+        existing_thread = _demo_threads.get(
+            client_id
+        )
+
+        if (
+            _demo_running.get(
+                client_id,
+                False,
+            )
+            and existing_thread
+            and existing_thread.is_alive()
+        ):
+
             return {
                 "success": True,
                 "started": True,
                 "mode": mode,
+                "client_id": client_id,
                 "message": (
-                    "Demo generator already running."
+                    "Demo traffic generator already "
+                    "running for this client."
                 ),
             }
 
-        _demo_running = True
+        _demo_running[
+            client_id
+        ] = True
 
-        _demo_thread = threading.Thread(
+        thread = threading.Thread(
             target=_demo_loop,
             args=(
                 real_app,
                 socketio,
+                client_id,
             ),
-            name="NETSENTINEL-Demo",
+            name=(
+                "NETSENTINEL-Demo-"
+                f"{client_id[:24]}"
+            ),
             daemon=True,
         )
 
-        _demo_thread.start()
+        _demo_threads[
+            client_id
+        ] = thread
+
+        thread.start()
 
     return {
         "success": True,
         "started": True,
         "mode": mode,
+        "client_id": client_id,
         "message": (
-            "Demo traffic generator started."
+            "Demo traffic generator started "
+            "for this client."
         ),
     }
 
 
 # ============================================================
-# STOP DEMO
+# BACKWARD-COMPATIBLE START
+# ============================================================
+
+
+def start_demo_if_enabled(
+    app,
+    socketio=None,
+    client_id=None,
+):
+    """
+    Existing code can still call the original function.
+
+    A supplied client_id gets its own DEMO worker.
+    """
+
+    return start_demo_for_client(
+        app=app,
+        client_id=(
+            client_id or "legacy"
+        ),
+        socketio=socketio,
+    )
+
+
+# ============================================================
+# STOP ONE CLIENT
+# ============================================================
+
+
+def stop_demo_for_client(
+    client_id,
+):
+    client_id = str(
+        client_id or "legacy"
+    ).strip()
+
+    if not client_id:
+        client_id = "legacy"
+
+    with _demo_lock:
+
+        _demo_running[
+            client_id
+        ] = False
+
+    return {
+        "success": True,
+        "stopped": True,
+        "client_id": client_id,
+        "message": (
+            "Demo traffic generator stopped "
+            "for this client."
+        ),
+    }
+
+
+# ============================================================
+# STOP ALL CLIENTS
 # ============================================================
 
 
 def stop_demo():
-    global _demo_running
 
     with _demo_lock:
-        _demo_running = False
+
+        for client_id in list(
+            _demo_running.keys()
+        ):
+
+            _demo_running[
+                client_id
+            ] = False
 
     return {
         "success": True,
         "stopped": True,
         "message": (
-            "Demo traffic generator stopped."
+            "All DEMO traffic generators stopped."
         ),
     }
 
@@ -724,13 +1075,71 @@ def stop_demo():
 # ============================================================
 
 
-def demo_status():
+def demo_status(
+    client_id=None,
+):
+
+    if client_id is not None:
+
+        client_id = str(
+            client_id
+        ).strip()
+
+        if not client_id:
+            client_id = "legacy"
+
+        thread = _demo_threads.get(
+            client_id
+        )
+
+        return {
+            "running": bool(
+                _demo_running.get(
+                    client_id,
+                    False,
+                )
+            ),
+            "thread_alive": bool(
+                thread
+                and thread.is_alive()
+            ),
+            "client_id": client_id,
+        }
+
+    with _demo_lock:
+
+        active_clients = []
+
+        for (
+            current_client_id,
+            running,
+        ) in _demo_running.items():
+
+            if not running:
+                continue
+
+            thread = _demo_threads.get(
+                current_client_id
+            )
+
+            active_clients.append(
+                {
+                    "client_id": current_client_id,
+                    "running": True,
+                    "thread_alive": bool(
+                        thread
+                        and thread.is_alive()
+                    ),
+                }
+            )
+
     return {
         "running": bool(
-            _demo_running
+            active_clients
         ),
-        "thread_alive": bool(
-            _demo_thread
-            and _demo_thread.is_alive()
+        "thread_alive": any(
+            item["thread_alive"]
+            for item in active_clients
         ),
+        "clients": active_clients,
     }

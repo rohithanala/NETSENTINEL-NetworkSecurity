@@ -1,6 +1,6 @@
-from datetime import datetime, timezone, timedelta
+from datetime import timezone, timedelta
 
-from sqlalchemy import func, distinct
+from sqlalchemy import func
 
 from flask import (
     Blueprint,
@@ -17,6 +17,7 @@ from backend.models import (
 )
 from backend.capture import get_manager
 from backend.client_identity import get_request_client_id
+from backend.demo_generator import start_demo_for_client
 
 
 api = Blueprint(
@@ -29,10 +30,12 @@ api = Blueprint(
 # HELPERS
 # ============================================================
 
+
 def iso(value):
     """
     Convert datetime to ISO-8601.
     """
+
     return value.isoformat() if value else None
 
 
@@ -51,7 +54,7 @@ def normalize_dt(value):
     Normalize datetime for safe Python comparisons.
 
     SQLite may return naive datetime values.
-    NETSENTINEL stores its live timestamps as UTC values.
+    NETSENTINEL stores timestamps as UTC values.
     """
 
     if value is None:
@@ -77,10 +80,6 @@ def is_local_or_private_ip(ip):
 
     ip = str(ip).strip().lower()
 
-    # --------------------------------------------------------
-    # IPv6
-    # --------------------------------------------------------
-
     if ":" in ip:
         return (
             ip == "::1"
@@ -88,10 +87,6 @@ def is_local_or_private_ip(ip):
             or ip.startswith("fc")
             or ip.startswith("fd")
         )
-
-    # --------------------------------------------------------
-    # IPv4
-    # --------------------------------------------------------
 
     parts = ip.split(".")
 
@@ -117,29 +112,24 @@ def is_local_or_private_ip(ip):
     ):
         return False
 
-    # 10.0.0.0/8
     if a == 10:
         return True
 
-    # 172.16.0.0/12
     if (
         a == 172
         and 16 <= b <= 31
     ):
         return True
 
-    # 192.168.0.0/16
     if (
         a == 192
         and b == 168
     ):
         return True
 
-    # Loopback
     if a == 127:
         return True
 
-    # Link-local
     if (
         a == 169
         and b == 254
@@ -188,6 +178,7 @@ def protocol_distribution_from_rows(rows):
     distribution = {}
 
     for protocol, count in rows:
+
         normalized = normalize_protocol(
             protocol
         )
@@ -197,7 +188,9 @@ def protocol_distribution_from_rows(rows):
                 normalized,
                 0,
             )
-            + int(count or 0)
+            + int(
+                count or 0
+            )
         )
 
     return distribution
@@ -206,12 +199,6 @@ def protocol_distribution_from_rows(rows):
 def get_client_id():
     """
     Return the client namespace associated with this request.
-
-    The browser/sensor sends the value using:
-
-        X-NETSENTINEL-CLIENT-ID
-
-    Query-string fallback is supported by client_identity.py.
     """
 
     return get_request_client_id()
@@ -219,17 +206,94 @@ def get_client_id():
 
 def client_filter(model):
     """
-    Return the SQLAlchemy ownership filter for a telemetry model.
-
-    Every telemetry record must belong to exactly one client.
+    Return the SQLAlchemy ownership filter.
     """
 
     return model.client_id == get_client_id()
 
 
+def ensure_demo_client(client_id):
+    """
+    Ensure the browser has its own DEMO worker.
+    """
+
+    try:
+
+        return start_demo_for_client(
+            app=current_app,
+            client_id=client_id,
+        )
+
+    except Exception as exc:
+
+        return {
+            "success": False,
+            "started": False,
+            "client_id": client_id,
+            "message": (
+                "Unable to start client DEMO generator."
+            ),
+            "error": str(exc),
+        }
+
+
+def configured_monitoring_enabled():
+    """
+    Read the application's configured monitoring state.
+
+    DEMO mode uses this configuration as the logical monitoring
+    state. It does not depend on a physical Scapy capture thread.
+    """
+
+    value = current_app.config.get(
+        "MONITORING_ENABLED",
+        False,
+    )
+
+    if isinstance(
+        value,
+        str,
+    ):
+
+        return (
+            value.strip().lower()
+            in {
+                "1",
+                "true",
+                "yes",
+                "on",
+                "enabled",
+            }
+        )
+
+    return bool(
+        value
+    )
+
+
+def configured_mode():
+    """
+    Return normalized NETSENTINEL application mode.
+    """
+
+    return str(
+        current_app.config.get(
+            "NETSENTINEL_MODE",
+            current_app.config.get(
+                "MODE",
+                current_app.config.get(
+                    "MONITOR_MODE",
+                    "LIVE",
+                ),
+            ),
+        )
+    ).upper()
+
+
 # ============================================================
 # HEALTH
 # ============================================================
+
 
 @api.get("/health")
 def health():
@@ -244,10 +308,15 @@ def health():
 # CAPTURE
 # ============================================================
 
+
 @api.get("/capture/status")
 def capture_status():
 
     client_id = get_client_id()
+
+    ensure_demo_client(
+        client_id
+    )
 
     manager = get_manager(
         current_app,
@@ -255,6 +324,26 @@ def capture_status():
     )
 
     result = manager.status()
+
+    mode = configured_mode()
+
+    monitoring_enabled = (
+        configured_monitoring_enabled()
+    )
+
+    if mode in {
+        "DEMO",
+        "SIMULATION",
+        "TEST",
+    }:
+
+        result["running"] = bool(
+            monitoring_enabled
+        )
+
+        result["interface"] = "DEMO"
+
+        result["mode"] = "DEMO"
 
     result["client_id"] = client_id
 
@@ -319,6 +408,7 @@ def capture_stop():
 # TRAFFIC
 # ============================================================
 
+
 @api.get("/traffic")
 def traffic():
 
@@ -337,6 +427,10 @@ def traffic():
     )
 
     client_id = get_client_id()
+
+    ensure_demo_client(
+        client_id
+    )
 
     rows = (
         db.session.query(
@@ -401,6 +495,7 @@ def traffic():
 # ALERTS
 # ============================================================
 
+
 @api.get("/alerts")
 def alerts():
 
@@ -419,6 +514,10 @@ def alerts():
     )
 
     client_id = get_client_id()
+
+    ensure_demo_client(
+        client_id
+    )
 
     rows = (
         db.session.query(
@@ -481,10 +580,15 @@ def alerts():
 # DEVICES
 # ============================================================
 
+
 @api.get("/devices")
 def devices():
 
     client_id = get_client_id()
+
+    ensure_demo_client(
+        client_id
+    )
 
     rows = (
         db.session.query(
@@ -545,20 +649,28 @@ def devices():
 # STATS
 # ============================================================
 
+
 @api.get("/stats")
 def stats():
     """
-    Optimized real-time statistics.
-
-    Statistics are calculated only from telemetry belonging
-    to the requesting NETSENTINEL client.
+    Optimized client-isolated real-time statistics.
     """
 
     client_id = get_client_id()
 
+    ensure_demo_client(
+        client_id
+    )
+
     manager = get_manager(
         current_app,
         client_id=client_id,
+    )
+
+    mode = configured_mode()
+
+    monitoring_enabled = (
+        configured_monitoring_enabled()
     )
 
     # --------------------------------------------------------
@@ -595,12 +707,15 @@ def stats():
     )
 
     # --------------------------------------------------------
-    # ACTIVITY WINDOW
+    # ACTIVITY
     # --------------------------------------------------------
 
     traffic_rate_pps = 0.0
+
     traffic_rate_bps = 0.0
+
     active_connections = 0
+
     active_devices = 0
 
     if latest_time is not None:
@@ -615,10 +730,6 @@ def stats():
                 minutes=5
             )
         )
-
-        # ----------------------------------------------------
-        # SQL-SIDE TRAFFIC AGGREGATION
-        # ----------------------------------------------------
 
         aggregate = (
             db.session.query(
@@ -668,7 +779,8 @@ def stats():
         ):
 
             elapsed = (
-                last_time - first_time
+                last_time -
+                first_time
             ).total_seconds()
 
             elapsed = max(
@@ -677,39 +789,37 @@ def stats():
             )
 
             traffic_rate_pps = (
-                packet_count
-                / elapsed
+                packet_count /
+                elapsed
             )
 
             traffic_rate_bps = (
-                total_bytes
-                * 8
-                / elapsed
+                total_bytes *
+                8 /
+                elapsed
             )
 
         # ----------------------------------------------------
         # ACTIVE CONNECTIONS
         # ----------------------------------------------------
 
-        connection_count = (
-            db.session.query(
-                Traffic.source_ip,
-                Traffic.destination_ip,
-                Traffic.destination_port,
-            )
-            .filter(
-                Traffic.client_id == client_id,
-                Traffic.timestamp >= cutoff,
-                Traffic.timestamp <= normalized_latest,
-                Traffic.source_ip.isnot(None),
-                Traffic.destination_ip.isnot(None),
-            )
-            .distinct()
-            .count()
-        )
-
         active_connections = int(
-            connection_count
+            (
+                db.session.query(
+                    Traffic.source_ip,
+                    Traffic.destination_ip,
+                    Traffic.destination_port,
+                )
+                .filter(
+                    Traffic.client_id == client_id,
+                    Traffic.timestamp >= cutoff,
+                    Traffic.timestamp <= normalized_latest,
+                    Traffic.source_ip.isnot(None),
+                    Traffic.destination_ip.isnot(None),
+                )
+                .distinct()
+                .count()
+            )
         )
 
         # ----------------------------------------------------
@@ -742,6 +852,7 @@ def stats():
                     source_ip
                 )
             ):
+
                 active_device_ips.add(
                     source_ip
                 )
@@ -752,6 +863,7 @@ def stats():
                     destination_ip
                 )
             ):
+
                 active_device_ips.add(
                     destination_ip
                 )
@@ -779,7 +891,7 @@ def stats():
     )
 
     # --------------------------------------------------------
-    # THREATS DETECTED
+    # THREATS
     # --------------------------------------------------------
 
     threats_detected = (
@@ -802,24 +914,75 @@ def stats():
     )
 
     # --------------------------------------------------------
-    # CAPTURE STATUS
+    # CAPTURE STATE
     # --------------------------------------------------------
 
     capture = manager.status()
 
-    monitoring_enabled = bool(
-        manager.running
-    )
+    if mode in {
+        "DEMO",
+        "SIMULATION",
+        "TEST",
+    }:
 
-    configured_mode = str(
-        current_app.config.get(
-            "NETSENTINEL_MODE",
-            current_app.config.get(
-                "MONITOR_MODE",
-                "LIVE",
-            ),
+        capture["client_id"] = (
+            client_id
         )
-    ).upper()
+
+        capture["mode"] = (
+            "DEMO"
+        )
+
+        capture["interface"] = (
+            "DEMO"
+        )
+
+        capture["running"] = bool(
+            monitoring_enabled
+        )
+
+        capture["last_error"] = (
+            capture.get(
+                "last_error"
+            )
+        )
+
+    else:
+
+        capture["client_id"] = (
+            client_id
+        )
+
+    # --------------------------------------------------------
+    # LOGICAL IDS STATUS
+    # --------------------------------------------------------
+
+    if mode in {
+        "DEMO",
+        "SIMULATION",
+        "TEST",
+    }:
+
+        ids_status = (
+            "running"
+            if monitoring_enabled
+            else "stopped"
+        )
+
+    else:
+
+        ids_status = (
+            "running"
+            if (
+                monitoring_enabled
+                and bool(
+                    capture.get(
+                        "running"
+                    )
+                )
+            )
+            else "stopped"
+        )
 
     # --------------------------------------------------------
     # RESPONSE
@@ -827,44 +990,77 @@ def stats():
 
     return jsonify(
         {
-            "client_id": client_id,
-            "packets_captured": int(
-                packets_captured
-            ),
-            "active_connections": int(
-                active_connections
-            ),
-            "active_devices": int(
-                active_devices
-            ),
-            "security_alerts": int(
-                security_alerts
-            ),
-            "threats_detected": int(
-                threats_detected
-            ),
-            "traffic_rate_pps": round(
-                traffic_rate_pps,
-                2,
-            ),
-            "traffic_rate_bps": round(
-                traffic_rate_bps,
-                2,
-            ),
-            "last_packet_at": iso(
-                latest_time
-            ),
-            "monitoring_enabled": monitoring_enabled,
-            "ids_status": (
-                "running"
-                if monitoring_enabled
-                else "stopped"
-            ),
-            "mode": configured_mode,
-            "network_interface": capture.get(
-                "interface"
-            ),
-            "capture": capture,
+            "client_id":
+                client_id,
+
+            "packets_captured":
+                int(
+                    packets_captured
+                ),
+
+            "active_connections":
+                int(
+                    active_connections
+                ),
+
+            "active_devices":
+                int(
+                    active_devices
+                ),
+
+            "security_alerts":
+                int(
+                    security_alerts
+                ),
+
+            "threats_detected":
+                int(
+                    threats_detected
+                ),
+
+            "traffic_rate_pps":
+                round(
+                    traffic_rate_pps,
+                    2,
+                ),
+
+            "traffic_rate_bps":
+                round(
+                    traffic_rate_bps,
+                    2,
+                ),
+
+            "last_packet_at":
+                iso(
+                    latest_time
+                ),
+
+            "monitoring_enabled":
+                bool(
+                    monitoring_enabled
+                ),
+
+            "ids_status":
+                ids_status,
+
+            "mode":
+                mode,
+
+            "network_interface":
+                (
+                    "DEMO"
+                    if mode in {
+                        "DEMO",
+                        "SIMULATION",
+                        "TEST",
+                    }
+                    else capture.get(
+                        "interface"
+                    )
+                ),
+
+            "capture":
+                capture,
         }
     )
 
@@ -872,6 +1068,7 @@ def stats():
 # ============================================================
 # UPDATE ALERT
 # ============================================================
+
 
 @api.patch("/alerts/<int:alert_id>")
 def update_alert(alert_id):
@@ -935,20 +1132,18 @@ def update_alert(alert_id):
 # ANALYTICS
 # ============================================================
 
+
 @api.get("/analytics")
 def analytics():
     """
-    Optimized analytics endpoint.
-
-    All analytics are calculated only from the requesting
-    NETSENTINEL client's telemetry.
+    Client-isolated analytics endpoint.
     """
 
     client_id = get_client_id()
 
-    # --------------------------------------------------------
-    # TOTAL PACKETS
-    # --------------------------------------------------------
+    ensure_demo_client(
+        client_id
+    )
 
     total_packets = (
         db.session.query(
@@ -962,10 +1157,6 @@ def analytics():
         .scalar()
         or 0
     )
-
-    # --------------------------------------------------------
-    # PROTOCOL DISTRIBUTION
-    # --------------------------------------------------------
 
     protocol_rows = (
         db.session.query(
@@ -989,10 +1180,6 @@ def analytics():
         )
     )
 
-    # --------------------------------------------------------
-    # TOTAL ALERTS
-    # --------------------------------------------------------
-
     total_alerts = (
         db.session.query(
             func.count(
@@ -1005,10 +1192,6 @@ def analytics():
         .scalar()
         or 0
     )
-
-    # --------------------------------------------------------
-    # ACTIVE DEVICES — LAST 5 MINUTES
-    # --------------------------------------------------------
 
     latest_time = (
         db.session.query(
@@ -1061,6 +1244,7 @@ def analytics():
                     source_ip
                 )
             ):
+
                 active_device_ips.add(
                     source_ip
                 )
@@ -1071,23 +1255,32 @@ def analytics():
                     destination_ip
                 )
             ):
+
                 active_device_ips.add(
                     destination_ip
                 )
 
     return jsonify(
         {
-            "client_id": client_id,
-            "total_packets": int(
-                total_packets
-            ),
+            "client_id":
+                client_id,
+
+            "total_packets":
+                int(
+                    total_packets
+                ),
+
             "protocol_distribution":
                 protocol_distribution,
-            "alerts": int(
-                total_alerts
-            ),
-            "devices": len(
-                active_device_ips
-            ),
+
+            "alerts":
+                int(
+                    total_alerts
+                ),
+
+            "devices":
+                len(
+                    active_device_ips
+                ),
         }
     )

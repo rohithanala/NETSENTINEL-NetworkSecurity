@@ -6,7 +6,6 @@ import socket
 import subprocess
 import threading
 import time
-from collections import defaultdict
 from datetime import datetime, timezone
 
 from scapy.all import (
@@ -39,6 +38,19 @@ from .models import (
 # ============================================================
 # NETSENTINEL
 # LIVE + DEMO PACKET CAPTURE MANAGER
+#
+# IMPORTANT ARCHITECTURE
+#
+# CaptureManager instances are isolated by client_id.
+#
+# Example:
+#
+# client-A -> CaptureManager(client-A)
+# client-B -> CaptureManager(client-B)
+# legacy   -> CaptureManager(legacy)
+#
+# This prevents one browser/client from sharing the same
+# capture state with another browser/client.
 # ============================================================
 
 
@@ -102,7 +114,7 @@ class CaptureManager:
         # ----------------------------------------------------
         # BATCHED DATABASE WRITES
         #
-        # This is the main SQLite lock fix.
+        # This keeps the SQLite contention fix.
         # ----------------------------------------------------
 
         config = (
@@ -201,6 +213,7 @@ class CaptureManager:
         )
 
         if self.running:
+
             return self.get_client_id()
 
         self.client_id = normalized
@@ -233,6 +246,7 @@ class CaptureManager:
         self.app = real_app
 
         if socketio is not None:
+
             self.socketio = socketio
 
         if (
@@ -407,7 +421,7 @@ class CaptureManager:
 
     @staticmethod
     def is_private_or_local_ip(
-        ip,
+        ip
     ):
 
         if not ip:
@@ -459,11 +473,7 @@ class CaptureManager:
             .replace(" ", "")
         )
 
-        if (
-            len(compact)
-            != 12
-        ):
-
+        if len(compact) != 12:
             return None
 
         invalid = {
@@ -593,8 +603,7 @@ class CaptureManager:
 
         if (
             self.interface
-            and self.current_mode()
-            != "DEMO"
+            and self.current_mode() != "DEMO"
         ):
 
             try:
@@ -616,10 +625,8 @@ class CaptureManager:
 
             try:
 
-                interface_mac = (
-                    get_if_hwaddr(
-                        self.interface
-                    )
+                interface_mac = get_if_hwaddr(
+                    self.interface
                 )
 
                 interface_mac = (
@@ -637,10 +644,7 @@ class CaptureManager:
             except Exception:
                 pass
 
-        if (
-            self.current_mode()
-            != "DEMO"
-        ):
+        if self.current_mode() != "DEMO":
 
             try:
 
@@ -650,10 +654,8 @@ class CaptureManager:
 
                 try:
 
-                    default_ip = (
-                        get_if_addr(
-                            default_interface
-                        )
+                    default_ip = get_if_addr(
+                        default_interface
                     )
 
                     if self.is_valid_ip(
@@ -669,10 +671,8 @@ class CaptureManager:
 
                 try:
 
-                    default_mac = (
-                        get_if_hwaddr(
-                            default_interface
-                        )
+                    default_mac = get_if_hwaddr(
+                        default_interface
                     )
 
                     default_mac = (
@@ -912,8 +912,7 @@ class CaptureManager:
             not self.is_private_or_local_ip(
                 value
             )
-            and self.current_mode()
-            != "DEMO"
+            and self.current_mode() != "DEMO"
         ):
 
             return None
@@ -943,12 +942,6 @@ class CaptureManager:
 
                     if source_mac:
 
-                        with self.cache_lock:
-
-                            self.mac_cache[
-                                value
-                            ] = source_mac
-
                         packet_ip = (
                             packet.getlayer(
                                 IP
@@ -967,9 +960,21 @@ class CaptureManager:
                             )
                         ):
 
+                            with self.cache_lock:
+
+                                self.mac_cache[
+                                    value
+                                ] = source_mac
+
                             return source_mac
 
                     if destination_mac:
+
+                        with self.cache_lock:
+
+                            self.mac_cache[
+                                value
+                            ] = destination_mac
 
                         return destination_mac
 
@@ -1116,8 +1121,11 @@ class CaptureManager:
         if is_local:
 
             try:
+
                 hostname = socket.gethostname()
+
             except Exception:
+
                 hostname = None
 
         if not hostname:
@@ -1129,9 +1137,11 @@ class CaptureManager:
                 )
 
                 if result:
+
                     hostname = result[0]
 
             except Exception:
+
                 hostname = None
 
         with self.cache_lock:
@@ -1197,25 +1207,34 @@ class CaptureManager:
             if record is None:
 
                 record = {
-                    "ip_address": value,
-                    "mac_address": (
-                        normalized_mac
-                    ),
-                    "hostname": (
-                        str(hostname).strip()
-                        if hostname
-                        else None
-                    ),
-                    "packet_count": int(
-                        packet_increment
-                        or 0
-                    ),
-                    "client_id": (
-                        client_namespace
-                    ),
-                    "is_demo": bool(
-                        is_demo
-                    ),
+                    "ip_address":
+                        value,
+
+                    "mac_address":
+                        normalized_mac,
+
+                    "hostname":
+                        (
+                            str(
+                                hostname
+                            ).strip()
+                            if hostname
+                            else None
+                        ),
+
+                    "packet_count":
+                        int(
+                            packet_increment
+                            or 0
+                        ),
+
+                    "client_id":
+                        client_namespace,
+
+                    "is_demo":
+                        bool(
+                            is_demo
+                        ),
                 }
 
                 self.pending_devices[
@@ -1224,7 +1243,9 @@ class CaptureManager:
 
             else:
 
-                record["packet_count"] += int(
+                record[
+                    "packet_count"
+                ] += int(
                     packet_increment
                     or 0
                 )
@@ -1236,9 +1257,9 @@ class CaptureManager:
                     )
                 ):
 
-                    record["mac_address"] = (
-                        normalized_mac
-                    )
+                    record[
+                        "mac_address"
+                    ] = normalized_mac
 
                 if (
                     hostname
@@ -1247,14 +1268,14 @@ class CaptureManager:
                     )
                 ):
 
-                    record["hostname"] = (
-                        str(
-                            hostname
-                        ).strip()
-                    )
+                    record[
+                        "hostname"
+                    ] = str(
+                        hostname
+                    ).strip()
 
     # ========================================================
-    # PARSE
+    # PARSE PACKET
     # ========================================================
 
     def parse_packet(
@@ -1429,6 +1450,7 @@ class CaptureManager:
             not source_ip
             and not destination_ip
         ):
+
             return None
 
         tcp_flags = None
@@ -1447,29 +1469,50 @@ class CaptureManager:
             pass
 
         return {
-            "timestamp": timestamp,
-            "source_ip": source_ip,
-            "destination_ip": destination_ip,
-            "protocol": protocol,
-            "source_port": source_port,
-            "destination_port": destination_port,
-            "packet_size": packet_size,
-            "tcp_flags": tcp_flags,
-            "interface": (
-                str(
-                    self.interface
-                )
-                if self.interface
-                else (
-                    "DEMO"
-                    if is_demo
-                    else None
-                )
-            ),
-            "client_id": client_namespace,
-            "is_demo": bool(
-                is_demo
-            ),
+            "timestamp":
+                timestamp,
+
+            "source_ip":
+                source_ip,
+
+            "destination_ip":
+                destination_ip,
+
+            "protocol":
+                protocol,
+
+            "source_port":
+                source_port,
+
+            "destination_port":
+                destination_port,
+
+            "packet_size":
+                packet_size,
+
+            "tcp_flags":
+                tcp_flags,
+
+            "interface":
+                (
+                    str(
+                        self.interface
+                    )
+                    if self.interface
+                    else (
+                        "DEMO"
+                        if is_demo
+                        else None
+                    )
+                ),
+
+            "client_id":
+                client_namespace,
+
+            "is_demo":
+                bool(
+                    is_demo
+                ),
         }
 
     # ========================================================
@@ -1533,7 +1576,9 @@ class CaptureManager:
                 description = (
                     detection[3]
                     if len(detection) > 3
-                    else "Suspicious activity detected."
+                    else (
+                        "Suspicious activity detected."
+                    )
                 )
 
             elif isinstance(
@@ -1589,6 +1634,7 @@ class CaptureManager:
                 )
 
                 if "is_demo" in detection:
+
                     is_demo = bool(
                         detection["is_demo"]
                     )
@@ -1602,6 +1648,7 @@ class CaptureManager:
             ).upper()
 
             if severity not in Alert.VALID_SEVERITIES:
+
                 severity = "MEDIUM"
 
             try:
@@ -1611,6 +1658,7 @@ class CaptureManager:
                 )
 
                 if confidence > 1:
+
                     confidence /= 100.0
 
             except (
@@ -1629,47 +1677,56 @@ class CaptureManager:
             )
 
             alert_data = {
+                "timestamp":
+                    self.utc_now(),
 
-                "timestamp": self.utc_now(),
+                "detection_type":
+                    str(
+                        detection_type
+                    ),
 
-                "detection_type": str(
-                    detection_type
-                ),
+                "source_ip":
+                    (
+                        str(source_ip)
+                        if source_ip
+                        else "unknown"
+                    ),
 
-                "source_ip": (
-                    str(source_ip)
-                    if source_ip
-                    else "unknown"
-                ),
+                "destination_ip":
+                    (
+                        str(destination_ip)
+                        if destination_ip
+                        else None
+                    ),
 
-                "destination_ip": (
-                    str(destination_ip)
-                    if destination_ip
-                    else None
-                ),
+                "protocol":
+                    (
+                        str(protocol)
+                        if protocol
+                        else None
+                    ),
 
-                "protocol": (
-                    str(protocol)
-                    if protocol
-                    else None
-                ),
+                "severity":
+                    severity,
 
-                "severity": severity,
+                "confidence":
+                    confidence,
 
-                "confidence": confidence,
+                "description":
+                    str(
+                        description
+                    ),
 
-                "description": str(
-                    description
-                ),
+                "status":
+                    "new",
 
-                "status": "new",
+                "client_id":
+                    client_namespace,
 
-                "client_id": client_namespace,
-
-                "is_demo": bool(
-                    is_demo
-                ),
-
+                "is_demo":
+                    bool(
+                        is_demo
+                    ),
             }
 
             with self.pending_lock:
@@ -1719,8 +1776,7 @@ class CaptureManager:
                 >= self.write_batch_size
                 or (
                     traffic_batch
-                    and
-                    (
+                    and (
                         now
                         - self.last_batch_flush
                         >= self.batch_flush_interval
@@ -1729,10 +1785,13 @@ class CaptureManager:
             )
 
             if not should_flush:
+
                 return False
 
             self.pending_traffic.clear()
+
             self.pending_devices.clear()
+
             self.pending_alerts.clear()
 
             self.last_batch_flush = now
@@ -1742,6 +1801,7 @@ class CaptureManager:
             or device_batch
             or alert_batch
         ):
+
             return False
 
         app = self._unwrap_app(
@@ -1776,9 +1836,11 @@ class CaptureManager:
                                 ip_address=device_data[
                                     "ip_address"
                                 ],
+
                                 client_id=device_data[
                                     "client_id"
                                 ],
+
                                 is_demo=device_data[
                                     "is_demo"
                                 ],
@@ -1796,13 +1858,19 @@ class CaptureManager:
                                 ip_address=device_data[
                                     "ip_address"
                                 ],
+
                                 first_seen=now_dt,
+
                                 last_seen=now_dt,
+
                                 packet_count=0,
+
                                 status="normal",
+
                                 client_id=device_data[
                                     "client_id"
                                 ],
+
                                 is_demo=device_data[
                                     "is_demo"
                                 ],
@@ -1838,7 +1906,10 @@ class CaptureManager:
                         )
 
                         if mac:
-                            device.mac_address = mac
+
+                            device.mac_address = (
+                                mac
+                            )
 
                         hostname = (
                             device_data.get(
@@ -1847,6 +1918,7 @@ class CaptureManager:
                         )
 
                         if hostname:
+
                             device.hostname = (
                                 str(
                                     hostname
@@ -1858,7 +1930,9 @@ class CaptureManager:
                             "critical",
                         }:
 
-                            device.status = "normal"
+                            device.status = (
+                                "normal"
+                            )
 
                     # ----------------------------------------
                     # TRAFFIC
@@ -1870,33 +1944,43 @@ class CaptureManager:
                             timestamp=parsed[
                                 "timestamp"
                             ],
+
                             source_ip=parsed[
                                 "source_ip"
                             ],
+
                             destination_ip=parsed[
                                 "destination_ip"
                             ],
+
                             source_port=parsed[
                                 "source_port"
                             ],
+
                             destination_port=parsed[
                                 "destination_port"
                             ],
+
                             protocol=parsed[
                                 "protocol"
                             ],
+
                             packet_size=parsed[
                                 "packet_size"
                             ],
+
                             tcp_flags=parsed[
                                 "tcp_flags"
                             ],
+
                             interface=parsed[
                                 "interface"
                             ],
+
                             client_id=parsed[
                                 "client_id"
                             ],
+
                             is_demo=parsed[
                                 "is_demo"
                             ],
@@ -1916,33 +2000,43 @@ class CaptureManager:
                             timestamp=alert_data[
                                 "timestamp"
                             ],
+
                             detection_type=alert_data[
                                 "detection_type"
                             ],
+
                             source_ip=alert_data[
                                 "source_ip"
                             ],
+
                             destination_ip=alert_data[
                                 "destination_ip"
                             ],
+
                             protocol=alert_data[
                                 "protocol"
                             ],
+
                             severity=alert_data[
                                 "severity"
                             ],
+
                             confidence=alert_data[
                                 "confidence"
                             ],
+
                             description=alert_data[
                                 "description"
                             ],
+
                             status=alert_data[
                                 "status"
                             ],
+
                             client_id=alert_data[
                                 "client_id"
                             ],
+
                             is_demo=alert_data[
                                 "is_demo"
                             ],
@@ -2028,6 +2122,20 @@ class CaptureManager:
             else self.get_client_id()
         )
 
+        # Keep this manager's identity synchronized when a
+        # client-aware DEMO worker passes its client_id.
+        if (
+            not self.running
+            or self.get_client_id()
+            != client_namespace
+        ):
+
+            if not self.running:
+
+                self.client_id = (
+                    client_namespace
+                )
+
         self.packets_captured += 1
 
         self.last_packet_at = (
@@ -2099,12 +2207,14 @@ class CaptureManager:
 
         # ----------------------------------------------------
         # DEMO HOSTNAMES
+        #
+        # Supports both the original 10.10.x.x demo network
+        # and the new client-specific 10.<network>.x.10 format.
         # ----------------------------------------------------
 
         if is_demo:
 
             demo_names = {
-
                 "10.10.10.10":
                     "WORKSTATION-01",
 
@@ -2137,19 +2247,78 @@ class CaptureManager:
 
                 "104.18.32.47":
                     "CLOUD-SERVICE",
-
             }
+
+            def demo_hostname(
+                ip,
+            ):
+
+                if not ip:
+                    return None
+
+                direct = demo_names.get(
+                    ip
+                )
+
+                if direct:
+                    return direct
+
+                parts = str(
+                    ip
+                ).split(".")
+
+                if (
+                    len(parts) == 4
+                    and parts[0] == "10"
+                    and parts[3] == "10"
+                ):
+
+                    try:
+
+                        index = int(
+                            parts[2]
+                        )
+
+                    except ValueError:
+
+                        return None
+
+                    demo_device_names = {
+                        1:
+                            "WORKSTATION-01",
+
+                        2:
+                            "WORKSTATION-02",
+
+                        3:
+                            "DEV-LAPTOP",
+
+                        4:
+                            "FILE-SERVER",
+
+                        5:
+                            "DATABASE-SERVER",
+
+                        6:
+                            "SECURITY-CLIENT",
+                    }
+
+                    return demo_device_names.get(
+                        index
+                    )
+
+                return None
 
             source_hostname = (
                 source_hostname
-                or demo_names.get(
+                or demo_hostname(
                     source_ip
                 )
             )
 
             destination_hostname = (
                 destination_hostname
-                or demo_names.get(
+                or demo_hostname(
                     destination_ip
                 )
             )
@@ -2186,9 +2355,6 @@ class CaptureManager:
 
         # ----------------------------------------------------
         # IDS
-        #
-        # Detection happens immediately, but database writes
-        # are queued and committed in batches.
         # ----------------------------------------------------
 
         try:
@@ -2218,27 +2384,44 @@ class CaptureManager:
             if self.detector is not None:
 
                 detection_packet = {
-                    "timestamp": parsed[
-                        "timestamp"
-                    ],
-                    "source_ip": source_ip,
-                    "destination_ip": destination_ip,
-                    "protocol": parsed[
-                        "protocol"
-                    ],
-                    "source_port": parsed[
-                        "source_port"
-                    ],
-                    "destination_port": parsed[
-                        "destination_port"
-                    ],
-                    "packet_size": parsed[
-                        "packet_size"
-                    ],
-                    "client_id": client_namespace,
-                    "is_demo": bool(
-                        is_demo
-                    ),
+                    "timestamp":
+                        parsed[
+                            "timestamp"
+                        ],
+
+                    "source_ip":
+                        source_ip,
+
+                    "destination_ip":
+                        destination_ip,
+
+                    "protocol":
+                        parsed[
+                            "protocol"
+                        ],
+
+                    "source_port":
+                        parsed[
+                            "source_port"
+                        ],
+
+                    "destination_port":
+                        parsed[
+                            "destination_port"
+                        ],
+
+                    "packet_size":
+                        parsed[
+                            "packet_size"
+                        ],
+
+                    "client_id":
+                        client_namespace,
+
+                    "is_demo":
+                        bool(
+                            is_demo
+                        ),
                 }
 
                 evaluate = getattr(
@@ -2261,12 +2444,17 @@ class CaptureManager:
 
                             self._queue_alert(
                                 detection=detection,
+
                                 source_ip=source_ip,
+
                                 destination_ip=destination_ip,
+
                                 protocol=parsed[
                                     "protocol"
                                 ],
+
                                 is_demo=is_demo,
+
                                 client_id=client_namespace,
                             )
 
@@ -2305,7 +2493,7 @@ class CaptureManager:
         )
 
         # ----------------------------------------------------
-        # FLUSH WHEN REQUIRED
+        # FLUSH
         # ----------------------------------------------------
 
         self.flush_pending(
@@ -2364,39 +2552,48 @@ class CaptureManager:
                     ].isoformat()
                 ),
 
-                "source_ip": parsed[
-                    "source_ip"
-                ],
+                "source_ip":
+                    parsed[
+                        "source_ip"
+                    ],
 
-                "destination_ip": parsed[
-                    "destination_ip"
-                ],
+                "destination_ip":
+                    parsed[
+                        "destination_ip"
+                    ],
 
-                "protocol": parsed[
-                    "protocol"
-                ],
+                "protocol":
+                    parsed[
+                        "protocol"
+                    ],
 
-                "source_port": parsed[
-                    "source_port"
-                ],
+                "source_port":
+                    parsed[
+                        "source_port"
+                    ],
 
-                "destination_port": parsed[
-                    "destination_port"
-                ],
+                "destination_port":
+                    parsed[
+                        "destination_port"
+                    ],
 
-                "packet_size": parsed[
-                    "packet_size"
-                ],
+                "packet_size":
+                    parsed[
+                        "packet_size"
+                    ],
 
-                "tcp_flags": parsed[
-                    "tcp_flags"
-                ],
+                "tcp_flags":
+                    parsed[
+                        "tcp_flags"
+                    ],
 
-                "interface": parsed[
-                    "interface"
-                ],
+                "interface":
+                    parsed[
+                        "interface"
+                    ],
 
-                "source_mac": source_mac,
+                "source_mac":
+                    source_mac,
 
                 "destination_mac":
                     destination_mac,
@@ -2407,20 +2604,21 @@ class CaptureManager:
                 "destination_hostname":
                     destination_hostname,
 
-                "client_id": normalize_client_id(
-                    parsed.get(
-                        "client_id",
-                        self.get_client_id(),
-                    )
-                ),
+                "client_id":
+                    normalize_client_id(
+                        parsed.get(
+                            "client_id",
+                            self.get_client_id(),
+                        )
+                    ),
 
-                "is_demo": bool(
-                    parsed.get(
-                        "is_demo",
-                        False,
-                    )
-                ),
-
+                "is_demo":
+                    bool(
+                        parsed.get(
+                            "is_demo",
+                            False,
+                        )
+                    ),
             }
 
             self.socketio.emit(
@@ -2447,7 +2645,8 @@ class CaptureManager:
 
             payload = {
 
-                "id": None,
+                "id":
+                    None,
 
                 "timestamp": (
                     alert_data[
@@ -2504,7 +2703,6 @@ class CaptureManager:
                     alert_data[
                         "is_demo"
                     ],
-
             }
 
             self.socketio.emit(
@@ -2608,7 +2806,6 @@ class CaptureManager:
                             False,
                         )
                     ),
-
             }
 
             self._emit_alert_data(
@@ -2737,8 +2934,6 @@ class CaptureManager:
 
         changed = False
 
-        now = self.utc_now()
-
         for device in devices:
 
             ip = device.ip_address
@@ -2821,15 +3016,21 @@ class CaptureManager:
         if self.running:
 
             return {
-                "success": True,
+                "success":
+                    True,
+
                 "message":
                     "Capture already running.",
+
                 "interface":
-                    str(
-                        self.interface
-                    )
-                    if self.interface
-                    else None,
+                    (
+                        str(
+                            self.interface
+                        )
+                        if self.interface
+                        else None
+                    ),
+
                 "client_id":
                     self.get_client_id(),
             }
@@ -2845,10 +3046,13 @@ class CaptureManager:
         )
 
         self.last_error = None
+
         self.packets_captured = 0
+
         self.started_at = (
             self.utc_now()
         )
+
         self.last_packet_at = None
 
         if interface:
@@ -2858,8 +3062,11 @@ class CaptureManager:
         else:
 
             try:
+
                 self.interface = conf.iface
+
             except Exception:
+
                 self.interface = None
 
         if not self.interface:
@@ -2869,9 +3076,14 @@ class CaptureManager:
             )
 
             return {
-                "success": False,
-                "message": self.last_error,
-                "client_id": client_namespace,
+                "success":
+                    False,
+
+                "message":
+                    self.last_error,
+
+                "client_id":
+                    client_namespace,
             }
 
         app = self._unwrap_app(
@@ -2895,11 +3107,17 @@ class CaptureManager:
                 )
 
                 return {
-                    "success": False,
+                    "success":
+                        False,
+
                     "message":
                         "IDS initialization failed.",
+
                     "error":
-                        str(exc),
+                        str(
+                            exc
+                        ),
+
                     "client_id":
                         client_namespace,
                 }
@@ -2910,7 +3128,12 @@ class CaptureManager:
 
         self.thread = threading.Thread(
             target=self._capture_loop,
-            name="NETSENTINEL-Capture",
+
+            name=(
+                "NETSENTINEL-Capture-"
+                f"{client_namespace[:24]}"
+            ),
+
             daemon=True,
         )
 
@@ -2918,23 +3141,33 @@ class CaptureManager:
 
         enrichment_thread = threading.Thread(
             target=self._background_enrichment,
+
             args=(
                 client_namespace,
             ),
-            name="NETSENTINEL-Enrichment",
+
+            name=(
+                "NETSENTINEL-Enrichment-"
+                f"{client_namespace[:24]}"
+            ),
+
             daemon=True,
         )
 
         enrichment_thread.start()
 
         return {
-            "success": True,
+            "success":
+                True,
+
             "message":
                 "Live capture started.",
+
             "interface":
                 str(
                     self.interface
                 ),
+
             "client_id":
                 client_namespace,
         }
@@ -2954,9 +3187,12 @@ class CaptureManager:
         )
 
         return {
-            "success": True,
+            "success":
+                True,
+
             "message":
                 "Capture stopped.",
+
             "client_id":
                 self.get_client_id(),
         }
@@ -3035,15 +3271,26 @@ class CaptureManager:
 
 
 # ============================================================
-# GLOBAL MANAGER
+# CLIENT-ISOLATED CAPTURE MANAGERS
 # ============================================================
 
-_capture_manager = None
+_capture_managers = {}
 
-_capture_manager_lock = (
+_capture_managers_lock = (
     threading.RLock()
 )
 
+# Backward compatibility:
+#
+# Existing code may still reference _capture_manager.
+# It points to the legacy manager when one exists.
+#
+_capture_manager = None
+
+
+# ============================================================
+# GET MANAGER
+# ============================================================
 
 def get_manager(
     app=None,
@@ -3059,40 +3306,70 @@ def get_manager(
         )
     )
 
-    with _capture_manager_lock:
+    client_namespace = normalize_client_id(
+        client_id
+        if client_id is not None
+        else DEFAULT_CLIENT_ID
+    )
 
-        if _capture_manager is None:
+    with _capture_managers_lock:
 
-            _capture_manager = (
-                CaptureManager(
-                    app=real_app,
-                    client_id=(
-                        client_id
-                        if client_id is not None
-                        else DEFAULT_CLIENT_ID
-                    ),
-                )
+        manager = _capture_managers.get(
+            client_namespace
+        )
+
+        if manager is None:
+
+            manager = CaptureManager(
+                app=real_app,
+                client_id=client_namespace,
             )
+
+            _capture_managers[
+                client_namespace
+            ] = manager
 
         if real_app is not None:
 
-            _capture_manager.configure(
+            manager.configure(
                 app=real_app,
                 socketio=socketio,
-                client_id=client_id,
+                client_id=client_namespace,
             )
 
         elif socketio is not None:
 
-            _capture_manager.socketio = (
-                socketio
-            )
+            manager.socketio = socketio
 
-        return _capture_manager
+        # ----------------------------------------------------
+        # Keep the legacy alias working.
+        # ----------------------------------------------------
+
+        if (
+            client_namespace
+            == DEFAULT_CLIENT_ID
+        ):
+
+            _capture_manager = manager
+
+        return manager
 
 
 # ============================================================
-# START LIVE CAPTURE
+# GET ALL MANAGERS
+# ============================================================
+
+def get_all_managers():
+
+    with _capture_managers_lock:
+
+        return dict(
+            _capture_managers
+        )
+
+
+# ============================================================
+# START CAPTURE
 # ============================================================
 
 def start_capture(
@@ -3108,20 +3385,30 @@ def start_capture(
         )
     )
 
+    client_namespace = normalize_client_id(
+        client_id
+        if client_id is not None
+        else DEFAULT_CLIENT_ID
+    )
+
     manager = get_manager(
         app=real_app,
         socketio=socketio,
-        client_id=client_id,
+        client_id=client_namespace,
     )
 
     return manager.start(
         interface=interface,
-        client_id=client_id,
+        client_id=client_namespace,
     )
 
 
 # ============================================================
-# DEMO DEVICES
+# LEGACY DEMO NETWORK
+#
+# Kept for backward compatibility with older startup code.
+# Client-specific browser DEMO generation is handled by
+# backend.demo_generator.
 # ============================================================
 
 DEMO_DEVICES = [
@@ -3129,8 +3416,10 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.10",
+
         "mac":
             "02:10:10:10:10:10",
+
         "name":
             "WORKSTATION-01",
     },
@@ -3138,8 +3427,10 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.20",
+
         "mac":
             "02:10:10:10:10:20",
+
         "name":
             "WORKSTATION-02",
     },
@@ -3147,8 +3438,10 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.30",
+
         "mac":
             "02:10:10:10:10:30",
+
         "name":
             "DEV-LAPTOP",
     },
@@ -3156,8 +3449,10 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.40",
+
         "mac":
             "02:10:10:10:10:40",
+
         "name":
             "FILE-SERVER",
     },
@@ -3165,8 +3460,10 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.50",
+
         "mac":
             "02:10:10:10:10:50",
+
         "name":
             "DATABASE-SERVER",
     },
@@ -3174,12 +3471,13 @@ DEMO_DEVICES = [
     {
         "ip":
             "10.10.10.60",
+
         "mac":
             "02:10:10:10:10:60",
+
         "name":
             "SECURITY-CLIENT",
     },
-
 ]
 
 
@@ -3188,10 +3486,13 @@ DEMO_EXTERNAL_SERVICES = [
     {
         "ip":
             "8.8.8.8",
+
         "mac":
             "02:08:08:08:08:08",
+
         "port":
             53,
+
         "protocol":
             "UDP",
     },
@@ -3199,10 +3500,13 @@ DEMO_EXTERNAL_SERVICES = [
     {
         "ip":
             "1.1.1.1",
+
         "mac":
             "02:01:01:01:01:01",
+
         "port":
             53,
+
         "protocol":
             "UDP",
     },
@@ -3210,10 +3514,13 @@ DEMO_EXTERNAL_SERVICES = [
     {
         "ip":
             "142.250.183.14",
+
         "mac":
             "02:14:25:18:31:14",
+
         "port":
             443,
+
         "protocol":
             "TCP",
     },
@@ -3221,10 +3528,13 @@ DEMO_EXTERNAL_SERVICES = [
     {
         "ip":
             "151.101.1.69",
+
         "mac":
             "02:15:10:01:06:09",
+
         "port":
             443,
+
         "protocol":
             "TCP",
     },
@@ -3232,19 +3542,21 @@ DEMO_EXTERNAL_SERVICES = [
     {
         "ip":
             "104.18.32.47",
+
         "mac":
             "02:10:18:32:47:01",
+
         "port":
             443,
+
         "protocol":
             "TCP",
     },
-
 ]
 
 
 # ============================================================
-# DEMO PACKET BUILDERS
+# LEGACY DEMO PACKET BUILDERS
 # ============================================================
 
 def _demo_tcp(
@@ -3469,7 +3781,7 @@ def _demo_connection_burst_packets():
 
 
 # ============================================================
-# DEMO STATE
+# LEGACY DEMO STATE
 # ============================================================
 
 _demo_thread = None
@@ -3480,7 +3792,7 @@ _demo_lock = threading.RLock()
 
 
 # ============================================================
-# DEMO CYCLE
+# LEGACY DEMO CYCLE
 # ============================================================
 
 def _run_demo_cycle(
@@ -3598,17 +3910,13 @@ def _run_demo_cycle(
             0.015
         )
 
-    # --------------------------------------------------------
-    # Force a final batch flush after the complete cycle.
-    # --------------------------------------------------------
-
     manager.flush_pending(
         force=True
     )
 
 
 # ============================================================
-# DEMO LOOP
+# LEGACY DEMO LOOP
 # ============================================================
 
 def _demo_loop(
@@ -3635,12 +3943,9 @@ def _demo_loop(
             client_id=client_namespace,
         )
 
-        manager.client_id = (
-            client_namespace
-        )
-
         manager.interface = "DEMO"
         manager.running = True
+        manager.client_id = client_namespace
 
         if manager.started_at is None:
 
@@ -3684,7 +3989,7 @@ def _demo_loop(
 
 
 # ============================================================
-# START DEMO
+# LEGACY START DEMO
 # ============================================================
 
 def start_demo_if_enabled(
@@ -3705,8 +4010,12 @@ def start_demo_if_enabled(
     if real_app is None:
 
         return {
-            "success": False,
-            "started": False,
+            "success":
+                False,
+
+            "started":
+                False,
+
             "message":
                 "Flask application unavailable.",
         }
@@ -3718,12 +4027,6 @@ def start_demo_if_enabled(
     )
 
     config = real_app.config
-
-    # --------------------------------------------------------
-    # MONITORING ENABLED
-    #
-    # This check was missing before.
-    # --------------------------------------------------------
 
     monitoring_enabled = (
         config.get(
@@ -3751,16 +4054,23 @@ def start_demo_if_enabled(
     if not monitoring_enabled:
 
         return {
-            "success": True,
-            "started": False,
-            "mode": str(
-                config.get(
-                    "NETSENTINEL_MODE",
-                    "DEMO",
-                )
-            ).upper(),
+            "success":
+                True,
+
+            "started":
+                False,
+
+            "mode":
+                str(
+                    config.get(
+                        "NETSENTINEL_MODE",
+                        "DEMO",
+                    )
+                ).upper(),
+
             "client_id":
                 client_namespace,
+
             "message":
                 "Monitoring is disabled.",
         }
@@ -3785,11 +4095,18 @@ def start_demo_if_enabled(
     }:
 
         return {
-            "success": True,
-            "started": False,
-            "mode": mode,
+            "success":
+                True,
+
+            "started":
+                False,
+
+            "mode":
+                mode,
+
             "client_id":
                 client_namespace,
+
             "message":
                 (
                     "Demo generator not started "
@@ -3802,11 +4119,18 @@ def start_demo_if_enabled(
         if _demo_running:
 
             return {
-                "success": True,
-                "started": True,
-                "mode": mode,
+                "success":
+                    True,
+
+                "started":
+                    True,
+
+                "mode":
+                    mode,
+
                 "client_id":
                     client_namespace,
+
                 "message":
                     "Demo generator already running.",
             }
@@ -3825,9 +4149,11 @@ def start_demo_if_enabled(
 
         manager.interface = "DEMO"
         manager.running = True
+
         manager.started_at = (
             manager.utc_now()
         )
+
         manager.last_packet_at = None
         manager.last_error = None
 
@@ -3838,25 +4164,34 @@ def start_demo_if_enabled(
                 socketio,
                 client_namespace,
             ),
-            name="NETSENTINEL-Demo",
+            name=(
+                "NETSENTINEL-Legacy-Demo"
+            ),
             daemon=True,
         )
 
         _demo_thread.start()
 
     return {
-        "success": True,
-        "started": True,
-        "mode": mode,
+        "success":
+            True,
+
+        "started":
+            True,
+
+        "mode":
+            mode,
+
         "client_id":
             client_namespace,
+
         "message":
             "Demo traffic generator started.",
     }
 
 
 # ============================================================
-# STOP DEMO
+# STOP LEGACY DEMO
 # ============================================================
 
 def stop_demo():
@@ -3867,22 +4202,37 @@ def stop_demo():
 
         _demo_running = False
 
-    if _capture_manager is not None:
+    with _capture_managers_lock:
 
-        _capture_manager.flush_pending(
-            force=True
+        managers = list(
+            _capture_managers.values()
         )
 
-        if (
-            _capture_manager.current_mode()
-            == "DEMO"
-        ):
+    for manager in managers:
 
-            _capture_manager.running = False
+        try:
+
+            manager.flush_pending(
+                force=True
+            )
+
+            if (
+                manager.current_mode()
+                == "DEMO"
+            ):
+
+                manager.running = False
+
+        except Exception:
+            pass
 
     return {
-        "success": True,
-        "stopped": True,
+        "success":
+            True,
+
+        "stopped":
+            True,
+
         "message":
             "Demo traffic generator stopped.",
     }
@@ -3932,8 +4282,12 @@ def start_capture_if_enabled(
         if real_app is None:
 
             return {
-                "success": False,
-                "started": False,
+                "success":
+                    False,
+
+                "started":
+                    False,
+
                 "message":
                     "Flask application unavailable.",
             }
@@ -3945,10 +4299,6 @@ def start_capture_if_enabled(
         )
 
         config = real_app.config
-
-        # ----------------------------------------------------
-        # MONITORING ENABLED
-        # ----------------------------------------------------
 
         monitoring_enabled = (
             config.get(
@@ -3976,10 +4326,15 @@ def start_capture_if_enabled(
         if not monitoring_enabled:
 
             return {
-                "success": True,
-                "started": False,
+                "success":
+                    True,
+
+                "started":
+                    False,
+
                 "message":
                     "Monitoring is disabled.",
+
                 "mode":
                     str(
                         config.get(
@@ -3987,13 +4342,10 @@ def start_capture_if_enabled(
                             "DEMO",
                         )
                     ).upper(),
+
                 "client_id":
                     client_namespace,
             }
-
-        # ----------------------------------------------------
-        # MODE
-        # ----------------------------------------------------
 
         mode = str(
             config.get(
@@ -4010,6 +4362,12 @@ def start_capture_if_enabled(
 
         # ----------------------------------------------------
         # DEMO
+        #
+        # Do NOT start a global legacy DEMO stream at application
+        # boot anymore.
+        #
+        # Browser-specific DEMO streams are started when each
+        # browser requests telemetry through routes.py.
         # ----------------------------------------------------
 
         if mode in {
@@ -4018,11 +4376,26 @@ def start_capture_if_enabled(
             "TEST",
         }:
 
-            return start_demo_if_enabled(
-                app=real_app,
-                socketio=socketio,
-                client_id=client_namespace,
-            )
+            return {
+                "success":
+                    True,
+
+                "started":
+                    False,
+
+                "mode":
+                    "DEMO",
+
+                "client_id":
+                    client_namespace,
+
+                "message":
+                    (
+                        "DEMO mode ready. "
+                        "Client-specific generator starts "
+                        "on telemetry request."
+                    ),
+            }
 
         # ----------------------------------------------------
         # LIVE
@@ -4050,14 +4423,21 @@ def start_capture_if_enabled(
             return result
 
         return {
-            "success": True,
-            "started": False,
+            "success":
+                True,
+
+            "started":
+                False,
+
             "message":
                 (
                     "Capture not auto-started "
                     f"because mode is {mode}."
                 ),
-            "mode": mode,
+
+            "mode":
+                mode,
+
             "client_id":
                 client_namespace,
         }
@@ -4086,10 +4466,17 @@ def start_capture_if_enabled(
             pass
 
         return {
-            "success": False,
-            "started": False,
+            "success":
+                False,
+
+            "started":
+                False,
+
             "message":
                 "Capture initialization failed.",
+
             "error":
-                str(exc),
+                str(
+                    exc
+                ),
         }

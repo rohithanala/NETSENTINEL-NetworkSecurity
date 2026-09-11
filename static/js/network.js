@@ -13,26 +13,61 @@
  *   - private/local IP
  *   - seen within the last 5 minutes
  *
+ * Client isolation:
+ *   - every API request uses the current browser client ID
+ *   - only records belonging to that client are accepted
+ *
  * Public Internet endpoints and multicast addresses are shown
  * only as external traffic endpoints in the topology.
  * They are NOT counted as physical devices.
  * ============================================================
  */
 
+
 /* ============================================================
    CONFIGURATION
 ============================================================ */
 
 const DEVICE_LIMIT = 500;
+
 const TRAFFIC_LIMIT = 500;
+
 const POLL_INTERVAL = 2500;
 
-const ACTIVE_DEVICE_WINDOW_MS = 5 * 60 * 1000;
+const ACTIVE_DEVICE_WINDOW_MS =
+    5 * 60 * 1000;
 
 const MAX_LOCAL_NODES = 7;
+
 const MAX_EXTERNAL_NODES = 9;
 
 const PARTICLE_COUNT = 45;
+
+
+/* ============================================================
+   CLIENT ID
+============================================================ */
+
+const NETWORK_CLIENT_ID =
+    String(
+        window.NETSENTINEL_CLIENT_ID ||
+        window.NETSENTINEL?.clientId ||
+        ""
+    ).trim();
+
+
+const NETWORK_CLIENT_HEADER =
+    String(
+        window.NETSENTINEL_CLIENT_HEADER ||
+        window.NETSENTINEL?.clientHeader ||
+        "X-NETSENTINEL-CLIENT-ID"
+    );
+
+
+console.info(
+    "NETSENTINEL network client:",
+    NETWORK_CLIENT_ID || "not available"
+);
 
 
 /* ============================================================
@@ -40,14 +75,19 @@ const PARTICLE_COUNT = 45;
 ============================================================ */
 
 let devices = [];
+
 let traffic = [];
+
 let stats = {};
 
 let topologyNodes = [];
+
 let topologyEdges = [];
+
 let particles = [];
 
 let animationFrame = null;
+
 let topologyPaused = false;
 
 
@@ -56,34 +96,54 @@ let topologyPaused = false;
 ============================================================ */
 
 const canvas =
-    document.getElementById("networkCanvas");
+    document.getElementById(
+        "networkCanvas"
+    );
 
 const deviceRows =
-    document.getElementById("networkRows");
+    document.getElementById(
+        "networkRows"
+    );
 
 const searchInput =
-    document.getElementById("deviceSearch");
+    document.getElementById(
+        "deviceSearch"
+    );
 
 const statusFilter =
-    document.getElementById("statusFilter");
+    document.getElementById(
+        "statusFilter"
+    );
 
 const refreshButton =
-    document.getElementById("refreshButton");
+    document.getElementById(
+        "refreshButton"
+    );
 
 const resetTopologyButton =
-    document.getElementById("resetTopology");
+    document.getElementById(
+        "resetTopology"
+    );
 
 const topologyEmpty =
-    document.getElementById("topologyEmpty");
+    document.getElementById(
+        "topologyEmpty"
+    );
 
 const interfaceName =
-    document.getElementById("interfaceName");
+    document.getElementById(
+        "interfaceName"
+    );
 
 const sensorStatus =
-    document.getElementById("networkSensorStatus");
+    document.getElementById(
+        "networkSensorStatus"
+    );
 
 const inventoryCount =
-    document.getElementById("inventoryCount");
+    document.getElementById(
+        "inventoryCount"
+    );
 
 
 /* ============================================================
@@ -93,7 +153,10 @@ const inventoryCount =
 let ctx = null;
 
 if (canvas) {
-    ctx = canvas.getContext("2d");
+    ctx =
+        canvas.getContext(
+            "2d"
+        );
 }
 
 
@@ -102,7 +165,9 @@ if (canvas) {
 ============================================================ */
 
 function num(value) {
-    const n = Number(value);
+
+    const n =
+        Number(value);
 
     return Number.isFinite(n)
         ? n
@@ -111,16 +176,35 @@ function num(value) {
 
 
 function esc(value) {
-    return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+
+    return String(
+        value ?? ""
+    )
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
 }
 
 
 function getIp(device) {
+
     return (
         device?.ip_address ||
         device?.ip ||
@@ -131,6 +215,7 @@ function getIp(device) {
 
 
 function getMac(device) {
+
     return (
         device?.mac_address ||
         device?.mac ||
@@ -142,6 +227,7 @@ function getMac(device) {
 
 
 function getHostname(device) {
+
     return (
         device?.hostname ||
         device?.host_name ||
@@ -154,6 +240,7 @@ function getHostname(device) {
 
 
 function getPacketCount(device) {
+
     return num(
         device?.packet_count ??
         device?.packets ??
@@ -165,6 +252,7 @@ function getPacketCount(device) {
 
 
 function formatMac(mac) {
+
     if (!mac) {
         return "N/A";
     }
@@ -180,7 +268,10 @@ function formatMac(mac) {
             ""
         );
 
-    if (clean.length === 12) {
+    if (
+        clean.length === 12
+    ) {
+
         return clean
             .match(/.{2}/g)
             .join(":");
@@ -191,18 +282,30 @@ function formatMac(mac) {
 
 
 function formatNumber(value) {
-    return num(value).toLocaleString();
+
+    return num(
+        value
+    ).toLocaleString();
 }
 
 
 function formatTime(timestamp) {
+
     if (!timestamp) {
         return "—";
     }
 
-    const date = new Date(timestamp);
+    const date =
+        new Date(
+            timestamp
+        );
 
-    if (Number.isNaN(date.getTime())) {
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+
         return "—";
     }
 
@@ -211,12 +314,15 @@ function formatTime(timestamp) {
 
 
 function timestampMs(timestamp) {
+
     if (!timestamp) {
         return null;
     }
 
     const value =
-        new Date(timestamp).getTime();
+        new Date(
+            timestamp
+        ).getTime();
 
     return Number.isFinite(value)
         ? value
@@ -225,23 +331,97 @@ function timestampMs(timestamp) {
 
 
 /* ============================================================
+   CLIENT DATA VALIDATION
+============================================================ */
+
+function belongsToCurrentClient(
+    record
+) {
+
+    /*
+     * Backend responses should already be filtered.
+     *
+     * This additional check prevents a foreign record from
+     * accidentally appearing on the Network page.
+     */
+
+    if (
+        !NETWORK_CLIENT_ID
+    ) {
+
+        return true;
+    }
+
+
+    if (
+        record &&
+        record.client_id !== undefined &&
+        record.client_id !== null
+    ) {
+
+        return (
+            String(
+                record.client_id
+            ) ===
+            NETWORK_CLIENT_ID
+        );
+    }
+
+
+    /*
+     * Some old compatibility responses may omit client_id.
+     * The backend request itself is still client-specific.
+     */
+
+    return true;
+}
+
+
+function filterClientRecords(
+    records
+) {
+
+    if (
+        !Array.isArray(
+            records
+        )
+    ) {
+
+        return [];
+    }
+
+    return records.filter(
+        belongsToCurrentClient
+    );
+}
+
+
+/* ============================================================
    IP CLASSIFICATION
 ============================================================ */
 
 function isIPv4(ip) {
+
     const value =
-        String(ip || "").trim();
+        String(
+            ip || ""
+        ).trim();
 
     const parts =
         value.split(".");
 
-    if (parts.length !== 4) {
+    if (
+        parts.length !== 4
+    ) {
+
         return false;
     }
 
     return parts.every(
         part =>
-            /^\d+$/.test(part) &&
+            /^\d+$/.test(
+                part
+            ) &&
             Number(part) >= 0 &&
             Number(part) <= 255
     );
@@ -249,21 +429,33 @@ function isIPv4(ip) {
 
 
 function isIPv6(ip) {
-    return String(ip || "").includes(":");
+
+    return String(
+        ip || ""
+    ).includes(":");
 }
 
 
 function isPrivateIPv4(ip) {
-    if (!isIPv4(ip)) {
+
+    if (
+        !isIPv4(ip)
+    ) {
+
         return false;
     }
 
     const parts =
-        String(ip)
+        String(
+            ip
+        )
             .split(".")
             .map(Number);
 
-    if (parts[0] === 10) {
+    if (
+        parts[0] === 10
+    ) {
+
         return true;
     }
 
@@ -272,6 +464,7 @@ function isPrivateIPv4(ip) {
         parts[1] >= 16 &&
         parts[1] <= 31
     ) {
+
         return true;
     }
 
@@ -279,10 +472,14 @@ function isPrivateIPv4(ip) {
         parts[0] === 192 &&
         parts[1] === 168
     ) {
+
         return true;
     }
 
-    if (parts[0] === 127) {
+    if (
+        parts[0] === 127
+    ) {
+
         return true;
     }
 
@@ -290,6 +487,7 @@ function isPrivateIPv4(ip) {
         parts[0] === 169 &&
         parts[1] === 254
     ) {
+
         return true;
     }
 
@@ -298,8 +496,11 @@ function isPrivateIPv4(ip) {
 
 
 function isLocalAddress(ip) {
+
     const value =
-        String(ip || "")
+        String(
+            ip || ""
+        )
             .toLowerCase()
             .trim();
 
@@ -311,6 +512,7 @@ function isLocalAddress(ip) {
         value ===
         "localhost"
     ) {
+
         return true;
     }
 
@@ -318,6 +520,7 @@ function isLocalAddress(ip) {
         value ===
         "::1"
     ) {
+
         return true;
     }
 
@@ -326,6 +529,7 @@ function isLocalAddress(ip) {
             value
         )
     ) {
+
         return true;
     }
 
@@ -334,6 +538,7 @@ function isLocalAddress(ip) {
             "fe80:"
         )
     ) {
+
         return true;
     }
 
@@ -342,6 +547,7 @@ function isLocalAddress(ip) {
             "fc"
         )
     ) {
+
         return true;
     }
 
@@ -350,6 +556,7 @@ function isLocalAddress(ip) {
             "fd"
         )
     ) {
+
         return true;
     }
 
@@ -358,8 +565,11 @@ function isLocalAddress(ip) {
 
 
 function isMulticastAddress(ip) {
+
     const value =
-        String(ip || "")
+        String(
+            ip || ""
+        )
             .toLowerCase()
             .trim();
 
@@ -370,6 +580,7 @@ function isMulticastAddress(ip) {
     if (
         isIPv4(value)
     ) {
+
         const first =
             Number(
                 value.split(".")[0]
@@ -384,8 +595,9 @@ function isMulticastAddress(ip) {
     if (
         isIPv6(value)
     ) {
-        return (
-            value.startsWith("ff")
+
+        return value.startsWith(
+            "ff"
         );
     }
 
@@ -394,13 +606,17 @@ function isMulticastAddress(ip) {
 
 
 function isUsableExternalEndpoint(ip) {
+
     if (!ip) {
         return false;
     }
 
     if (
-        isMulticastAddress(ip)
+        isMulticastAddress(
+            ip
+        )
     ) {
+
         return false;
     }
 
@@ -408,6 +624,7 @@ function isUsableExternalEndpoint(ip) {
         String(ip) ===
         "255.255.255.255"
     ) {
+
         return false;
     }
 
@@ -416,38 +633,56 @@ function isUsableExternalEndpoint(ip) {
 
 
 function shortenIp(ip) {
-    const value =
-        String(ip || "Unknown");
 
-    if (value.length <= 20) {
+    const value =
+        String(
+            ip || "Unknown"
+        );
+
+    if (
+        value.length <= 20
+    ) {
+
         return value;
     }
 
     if (
         value.includes(":")
     ) {
+
         const parts =
             value.split(":");
 
         if (
             parts.length >= 5
         ) {
+
             return (
                 parts
-                    .slice(0, 2)
+                    .slice(
+                        0,
+                        2
+                    )
                     .join(":") +
                 ":…" +
                 parts
-                    .slice(-2)
+                    .slice(
+                        -2
+                    )
                     .join(":")
             );
         }
     }
 
     return (
-        value.slice(0, 8) +
+        value.slice(
+            0,
+            8
+        ) +
         "…" +
-        value.slice(-6)
+        value.slice(
+            -6
+        )
     );
 }
 
@@ -457,6 +692,7 @@ function shortenIp(ip) {
 ============================================================ */
 
 function normalizeStatus(device) {
+
     const status =
         String(
             device?.status || ""
@@ -465,29 +701,26 @@ function normalizeStatus(device) {
             .toLowerCase();
 
     if (
-        status ===
-            "critical" ||
-        status ===
-            "danger"
+        status === "critical" ||
+        status === "danger"
     ) {
+
         return "CRITICAL";
     }
 
     if (
-        status ===
-            "suspicious" ||
-        status ===
-            "warning"
+        status === "suspicious" ||
+        status === "warning"
     ) {
+
         return "SUSPICIOUS";
     }
 
     if (
-        status ===
-            "inactive" ||
-        status ===
-            "offline"
+        status === "inactive" ||
+        status === "offline"
     ) {
+
         return "INACTIVE";
     }
 
@@ -496,10 +729,12 @@ function normalizeStatus(device) {
 
 
 function statusClass(status) {
+
     switch (
         String(status)
             .toUpperCase()
     ) {
+
         case "CRITICAL":
             return "status-critical";
 
@@ -520,21 +755,55 @@ function statusClass(status) {
 ============================================================ */
 
 async function fetchJSON(url) {
+
+    const headers = {
+        "Accept":
+            "application/json"
+    };
+
+
+    if (
+        NETWORK_CLIENT_ID
+    ) {
+
+        headers[
+            NETWORK_CLIENT_HEADER
+        ] =
+            NETWORK_CLIENT_ID;
+    }
+
+
     const response =
         await fetch(
             url,
             {
-                cache: "no-store"
+                method: "GET",
+                cache: "no-store",
+                headers
             }
         );
 
-    if (!response.ok) {
+
+    const body =
+        await response
+            .json()
+            .catch(
+                () => null
+            );
+
+
+    if (
+        !response.ok
+    ) {
+
         throw new Error(
+            body?.error ||
             `${response.status} ${response.statusText}`
         );
     }
 
-    return response.json();
+
+    return body;
 }
 
 
@@ -546,12 +815,14 @@ async function fetchJSON(url) {
  * Backend stats already defines active devices using the
  * five-minute activity window.
  *
- * The Network page now follows the same concept:
+ * The Network page follows the same concept:
  *   - local/private IP only
  *   - last_seen within five minutes
+ *   - current browser/client only
  */
 
 function getActivityReferenceMs() {
+
     const latest =
         timestampMs(
             stats?.last_packet_at
@@ -562,7 +833,19 @@ function getActivityReferenceMs() {
 }
 
 
-function isActiveDevice(device) {
+function isActiveDevice(
+    device
+) {
+
+    if (
+        !belongsToCurrentClient(
+            device
+        )
+    ) {
+
+        return false;
+    }
+
     const ip =
         getIp(device);
 
@@ -570,12 +853,16 @@ function isActiveDevice(device) {
         !ip ||
         ip === "Unknown"
     ) {
+
         return false;
     }
 
     if (
-        !isLocalAddress(ip)
+        !isLocalAddress(
+            ip
+        )
     ) {
+
         return false;
     }
 
@@ -587,6 +874,7 @@ function isActiveDevice(device) {
     if (
         lastSeen === null
     ) {
+
         return false;
     }
 
@@ -607,17 +895,20 @@ function isActiveDevice(device) {
 
 
 function uniqueActiveLocalDevices() {
+
     const map =
         new Map();
 
     for (
         const device of devices
     ) {
+
         if (
             !isActiveDevice(
                 device
             )
         ) {
+
             continue;
         }
 
@@ -627,6 +918,7 @@ function uniqueActiveLocalDevices() {
         if (
             !map.has(ip)
         ) {
+
             map.set(
                 ip,
                 device
@@ -645,6 +937,7 @@ function uniqueActiveLocalDevices() {
 ============================================================ */
 
 function renderStats() {
+
     const activeDevices =
         document.getElementById(
             "activeDevices"
@@ -676,9 +969,10 @@ function renderStats() {
                 )
         ).length;
 
+
     /*
-     * The backend is authoritative for the headline count.
-     * Fallback uses the same local active-device definition.
+     * Backend is authoritative for the headline active-device
+     * count because its calculation is client-filtered.
      */
 
     const activeCount =
@@ -692,18 +986,22 @@ function renderStats() {
             )
             : activeLocalDevices.length;
 
+
     if (
         activeDevices
     ) {
+
         activeDevices.textContent =
             formatNumber(
                 activeCount
             );
     }
 
+
     if (
         activeConnections
     ) {
+
         activeConnections.textContent =
             formatNumber(
                 stats.active_connections ??
@@ -711,9 +1009,11 @@ function renderStats() {
             );
     }
 
+
     if (
         packetsObserved
     ) {
+
         packetsObserved.textContent =
             formatNumber(
                 stats.packets_captured ??
@@ -721,9 +1021,11 @@ function renderStats() {
             );
     }
 
+
     if (
         ipv6Devices
     ) {
+
         ipv6Devices.textContent =
             formatNumber(
                 ipv6Count
@@ -737,17 +1039,34 @@ function renderStats() {
 ============================================================ */
 
 function renderSensorState() {
+
     const capture =
-        stats.capture || {};
+        stats.capture ||
+        {};
+
+
+    const mode =
+        String(
+            stats?.mode ||
+            capture?.mode ||
+            "LIVE"
+        ).toUpperCase();
+
 
     const running =
-        Boolean(
-            capture.running
-        );
+        mode === "DEMO"
+            ? Boolean(
+                stats?.monitoring_enabled
+            )
+            : Boolean(
+                capture.running
+            );
+
 
     if (
         sensorStatus
     ) {
+
         sensorStatus.textContent =
             running
                 ? "CAPTURE ACTIVE"
@@ -759,9 +1078,11 @@ function renderSensorState() {
                 : "#ff7373";
     }
 
+
     if (
         interfaceName
     ) {
+
         const iface =
             stats.network_interface ||
             capture.interface ||
@@ -778,6 +1099,7 @@ function renderSensorState() {
 ============================================================ */
 
 function filteredDevices() {
+
     const search =
         (
             searchInput?.value ||
@@ -786,6 +1108,7 @@ function filteredDevices() {
             .trim()
             .toLowerCase();
 
+
     const selectedStatus =
         (
             statusFilter?.value ||
@@ -793,11 +1116,14 @@ function filteredDevices() {
         )
             .toUpperCase();
 
+
     const activeLocalDevices =
         uniqueActiveLocalDevices();
 
+
     return activeLocalDevices.filter(
         device => {
+
             const ip =
                 getIp(device);
 
@@ -808,7 +1134,10 @@ function filteredDevices() {
                 getHostname(device);
 
             const status =
-                normalizeStatus(device);
+                normalizeStatus(
+                    device
+                );
+
 
             const matchesSearch =
                 !search ||
@@ -822,11 +1151,13 @@ function filteredDevices() {
                     .toLowerCase()
                     .includes(search);
 
+
             const matchesStatus =
                 selectedStatus ===
                     "ALL" ||
                 status ===
                     selectedStatus;
+
 
             return (
                 matchesSearch &&
@@ -842,22 +1173,28 @@ function filteredDevices() {
 ============================================================ */
 
 function renderDevices() {
+
     if (
         !deviceRows
     ) {
+
         return;
     }
 
+
     const visible =
         filteredDevices();
+
 
     const totalActive =
         uniqueActiveLocalDevices()
             .length;
 
+
     if (
         inventoryCount
     ) {
+
         inventoryCount.textContent =
             `${totalActive} ${
                 totalActive === 1
@@ -866,9 +1203,11 @@ function renderDevices() {
             }`;
     }
 
+
     if (
         !visible.length
     ) {
+
         deviceRows.innerHTML = `
             <tr>
                 <td
@@ -883,10 +1222,12 @@ function renderDevices() {
         return;
     }
 
+
     deviceRows.innerHTML =
         visible
             .map(
                 device => {
+
                     const ip =
                         getIp(device);
 
@@ -899,20 +1240,28 @@ function renderDevices() {
                         getHostname(device);
 
                     const packets =
-                        getPacketCount(device);
+                        getPacketCount(
+                            device
+                        );
 
                     const status =
-                        normalizeStatus(device);
+                        normalizeStatus(
+                            device
+                        );
+
 
                     return `
                         <tr>
+
                             <td>
                                 <span
                                     class="mono ip-value"
                                     title="${esc(ip)}"
                                 >
                                     ${esc(
-                                        shortenIp(ip)
+                                        shortenIp(
+                                            ip
+                                        )
                                     )}
                                 </span>
                             </td>
@@ -937,7 +1286,9 @@ function renderDevices() {
 
                             <td>
                                 <span class="packet-value">
-                                    ${formatNumber(packets)}
+                                    ${formatNumber(
+                                        packets
+                                    )}
                                 </span>
                             </td>
 
@@ -961,6 +1312,7 @@ function renderDevices() {
                                     ${esc(status)}
                                 </span>
                             </td>
+
                         </tr>
                     `;
                 }
@@ -974,31 +1326,49 @@ function renderDevices() {
 ============================================================ */
 
 function uniqueDevices() {
+
     const map =
         new Map();
+
 
     for (
         const device of devices
     ) {
+
+        if (
+            !belongsToCurrentClient(
+                device
+            )
+        ) {
+
+            continue;
+        }
+
+
         const ip =
             getIp(device);
+
 
         if (
             !ip ||
             ip === "Unknown"
         ) {
+
             continue;
         }
+
 
         if (
             !map.has(ip)
         ) {
+
             map.set(
                 ip,
                 device
             );
         }
     }
+
 
     return Array.from(
         map.values()
@@ -1010,16 +1380,21 @@ function uniqueDevices() {
    TRAFFIC SCORE
 ============================================================ */
 
-function trafficScoreForIp(ip) {
+function trafficScoreForIp(
+    ip
+) {
+
     return traffic.reduce(
         (
             total,
             packet
         ) => {
+
             if (
                 packet?.source_ip === ip ||
                 packet?.destination_ip === ip
             ) {
+
                 return (
                     total +
                     num(
@@ -1027,6 +1402,7 @@ function trafficScoreForIp(ip) {
                     )
                 );
             }
+
 
             return total;
         },
@@ -1040,11 +1416,14 @@ function trafficScoreForIp(ip) {
 ============================================================ */
 
 function recentTrafficPackets() {
+
     if (
         !traffic.length
     ) {
+
         return [];
     }
+
 
     const reference =
         timestampMs(
@@ -1052,24 +1431,40 @@ function recentTrafficPackets() {
         ) ||
         Date.now();
 
+
     return traffic.filter(
         packet => {
+
+            if (
+                !belongsToCurrentClient(
+                    packet
+                )
+            ) {
+
+                return false;
+            }
+
+
             const timestamp =
                 timestampMs(
                     packet?.timestamp
                 );
 
+
             if (
                 timestamp === null
             ) {
+
                 return false;
             }
+
 
             const age =
                 Math.abs(
                     reference -
                     timestamp
                 );
+
 
             return (
                 age <=
@@ -1085,41 +1480,51 @@ function recentTrafficPackets() {
 ============================================================ */
 
 /*
- * External topology nodes now come from RECENT TRAFFIC,
- * not from the historical Device table.
+ * External topology nodes come from RECENT CLIENT TRAFFIC,
+ * not from the Device table.
  *
- * This prevents old public IP addresses from becoming
- * 189 "devices" on the Network page.
+ * They are traffic destinations/endpoints, not physical
+ * devices in the local inventory.
  */
 
 function recentExternalEndpoints() {
+
     const packets =
         recentTrafficPackets();
+
 
     const scores =
         new Map();
 
+
     for (
         const packet of packets
     ) {
+
         const endpoints = [
             packet?.source_ip,
             packet?.destination_ip
         ];
 
+
         for (
             const ip of endpoints
         ) {
+
             if (
                 !ip ||
                 isLocalAddress(ip) ||
                 !isUsableExternalEndpoint(ip)
             ) {
+
                 continue;
             }
 
+
             const current =
-                scores.get(ip) || 0;
+                scores.get(ip) ||
+                0;
+
 
             scores.set(
                 ip,
@@ -1130,6 +1535,7 @@ function recentExternalEndpoints() {
             );
         }
     }
+
 
     return Array.from(
         scores.entries()
@@ -1145,13 +1551,23 @@ function recentExternalEndpoints() {
         )
         .map(
             ([ip, score]) => ({
-                ip_address: ip,
+                ip_address:
+                    ip,
+
                 hostname:
                     "External endpoint",
-                packet_count: 0,
-                traffic_score: score,
-                status: "online",
-                is_extra: true
+
+                packet_count:
+                    0,
+
+                traffic_score:
+                    score,
+
+                status:
+                    "online",
+
+                is_extra:
+                    true
             })
         );
 }
@@ -1162,20 +1578,25 @@ function recentExternalEndpoints() {
 ============================================================ */
 
 function buildTopologyData() {
+
     if (
         !canvas
     ) {
+
         return;
     }
 
+
     const rect =
         canvas.getBoundingClientRect();
+
 
     const width =
         Math.max(
             rect.width,
             600
         );
+
 
     const height =
         Math.max(
@@ -1210,6 +1631,7 @@ function buildTopologyData() {
 
 
     topologyNodes = [];
+
     topologyEdges = [];
 
 
@@ -1218,9 +1640,12 @@ function buildTopologyData() {
     ---------------------------------------------------------- */
 
     const sensor = {
-        id: "sensor",
 
-        type: "sensor",
+        id:
+            "sensor",
+
+        type:
+            "sensor",
 
         x:
             width *
@@ -1230,7 +1655,8 @@ function buildTopologyData() {
             height *
             0.50,
 
-        radius: 36,
+        radius:
+            36,
 
         label:
             "NETSENTINEL",
@@ -1239,6 +1665,7 @@ function buildTopologyData() {
             stats.mode ||
             "LIVE"
     };
+
 
     topologyNodes.push(
         sensor
@@ -1253,11 +1680,13 @@ function buildTopologyData() {
         width *
         0.16;
 
+
     local.forEach(
         (
             device,
             index
         ) => {
+
             const y =
                 local.length === 1
                     ? height * 0.50
@@ -1273,7 +1702,9 @@ function buildTopologyData() {
                         height * 0.64
                     );
 
+
             const node = {
+
                 id:
                     `local-${index}`,
 
@@ -1298,29 +1729,39 @@ function buildTopologyData() {
                     ),
 
                 sublabel:
-                    getHostname(device),
+                    getHostname(
+                        device
+                    ),
 
                 status:
-                    normalizeStatus(device),
+                    normalizeStatus(
+                        device
+                    ),
 
                 packets:
-                    getPacketCount(device)
+                    getPacketCount(
+                        device
+                    )
             };
+
 
             topologyNodes.push(
                 node
             );
 
-            topologyEdges.push({
-                from:
-                    node.id,
 
-                to:
-                    "sensor",
+            topologyEdges.push(
+                {
+                    from:
+                        node.id,
 
-                type:
-                    "local"
-            });
+                    to:
+                        "sensor",
+
+                    type:
+                        "local"
+                }
+            );
         }
     );
 
@@ -1333,11 +1774,13 @@ function buildTopologyData() {
         width *
         0.84;
 
+
     external.forEach(
         (
             device,
             index
         ) => {
+
             const y =
                 external.length === 1
                     ? height * 0.50
@@ -1353,7 +1796,9 @@ function buildTopologyData() {
                         height * 0.74
                     );
 
+
             const node = {
+
                 id:
                     `external-${index}`,
 
@@ -1387,20 +1832,24 @@ function buildTopologyData() {
                     0
             };
 
+
             topologyNodes.push(
                 node
             );
 
-            topologyEdges.push({
-                from:
-                    "sensor",
 
-                to:
-                    node.id,
+            topologyEdges.push(
+                {
+                    from:
+                        "sensor",
 
-                type:
-                    "external"
-            });
+                    to:
+                        node.id,
+
+                    type:
+                        "external"
+                }
+            );
         }
     );
 
@@ -1412,6 +1861,7 @@ function buildTopologyData() {
     if (
         topologyEmpty
     ) {
+
         topologyEmpty.style.display =
             topologyNodes.length <= 1
                 ? "flex"
@@ -1428,6 +1878,7 @@ function buildTopologyData() {
 ============================================================ */
 
 function findNode(id) {
+
     return topologyNodes.find(
         node =>
             node.id === id
@@ -1440,39 +1891,47 @@ function findNode(id) {
 ============================================================ */
 
 function createParticles() {
+
     particles = [];
+
 
     if (
         !topologyEdges.length
     ) {
+
         return;
     }
+
 
     for (
         let i = 0;
         i < PARTICLE_COUNT;
         i++
     ) {
-        particles.push({
-            edgeIndex:
-                Math.floor(
+
+        particles.push(
+            {
+
+                edgeIndex:
+                    Math.floor(
+                        Math.random() *
+                        topologyEdges.length
+                    ),
+
+                progress:
+                    Math.random(),
+
+                speed:
+                    0.0007 +
                     Math.random() *
-                    topologyEdges.length
-                ),
+                    0.0018,
 
-            progress:
-                Math.random(),
-
-            speed:
-                0.0007 +
-                Math.random() *
-                0.0018,
-
-            size:
-                1.5 +
-                Math.random() *
-                2.2
-        });
+                size:
+                    1.5 +
+                    Math.random() *
+                    2.2
+            }
+        );
     }
 }
 
@@ -1486,13 +1945,16 @@ function bezierPoint(
     to,
     progress
 ) {
+
     const dx =
         to.x -
         from.x;
 
+
     const controlX =
         from.x +
         dx * 0.50;
+
 
     const controlY =
         (
@@ -1500,33 +1962,37 @@ function bezierPoint(
             to.y
         ) * 0.50;
 
+
     const p =
         progress;
+
 
     const inv =
         1 -
         p;
 
+
     return {
+
         x:
             inv * inv * from.x +
             2 *
-                inv *
-                p *
-                controlX +
+            inv *
             p *
-                p *
-                to.x,
+            controlX +
+            p *
+            p *
+            to.x,
 
         y:
             inv * inv * from.y +
             2 *
-                inv *
-                p *
-                controlY +
+            inv *
             p *
-                p *
-                to.y
+            controlY +
+            p *
+            p *
+            to.y
     };
 }
 
@@ -1540,10 +2006,13 @@ function drawGrid(
     width,
     height
 ) {
+
     context.save();
+
 
     context.fillStyle =
         "#071015";
+
 
     context.fillRect(
         0,
@@ -1552,20 +2021,25 @@ function drawGrid(
         height
     );
 
+
     context.strokeStyle =
         "rgba(80,150,170,0.055)";
+
 
     context.lineWidth =
         1;
 
+
     const grid =
         32;
+
 
     for (
         let x = 0;
         x <= width;
         x += grid
     ) {
+
         context.beginPath();
 
         context.moveTo(
@@ -1581,11 +2055,13 @@ function drawGrid(
         context.stroke();
     }
 
+
     for (
         let y = 0;
         y <= height;
         y += grid
     ) {
+
         context.beginPath();
 
         context.moveTo(
@@ -1601,6 +2077,7 @@ function drawGrid(
         context.stroke();
     }
 
+
     context.restore();
 }
 
@@ -1614,10 +2091,13 @@ function drawZones(
     width,
     height
 ) {
+
     context.save();
+
 
     context.fillStyle =
         "rgba(30,100,120,0.035)";
+
 
     context.fillRect(
         0,
@@ -1626,8 +2106,10 @@ function drawZones(
         height
     );
 
+
     context.fillStyle =
         "rgba(80,80,150,0.025)";
+
 
     context.fillRect(
         width * 0.69,
@@ -1636,51 +2118,66 @@ function drawZones(
         height
     );
 
+
     context.strokeStyle =
         "rgba(100,180,190,0.08)";
+
 
     context.setLineDash(
         [5, 8]
     );
 
+
     context.beginPath();
+
 
     context.moveTo(
         width * 0.31,
         0
     );
 
+
     context.lineTo(
         width * 0.31,
         height
     );
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.moveTo(
         width * 0.69,
         0
     );
 
+
     context.lineTo(
         width * 0.69,
         height
     );
 
+
     context.stroke();
+
 
     context.setLineDash([]);
+
 
     context.font =
         "700 10px Arial";
 
+
     context.fillStyle =
         "#536a73";
 
+
     context.textAlign =
         "center";
+
 
     context.fillText(
         "LOCAL NETWORK",
@@ -1688,17 +2185,20 @@ function drawZones(
         24
     );
 
+
     context.fillText(
         "SECURITY SENSOR",
         width * 0.50,
         24
     );
 
+
     context.fillText(
         "EXTERNAL NETWORK",
         width * 0.84,
         24
     );
+
 
     context.restore();
 }
@@ -1714,13 +2214,16 @@ function drawConnection(
     to,
     type
 ) {
+
     const dx =
         to.x -
         from.x;
 
+
     const controlX =
         from.x +
         dx * 0.50;
+
 
     const controlY =
         (
@@ -1728,33 +2231,42 @@ function drawConnection(
             to.y
         ) * 0.50;
 
+
     let alpha =
         0.18;
+
 
     if (
         type ===
         "external"
     ) {
+
         alpha =
             0.22;
     }
+
 
     if (
         type ===
         "local"
     ) {
+
         alpha =
             0.25;
     }
 
+
     context.save();
 
+
     context.beginPath();
+
 
     context.moveTo(
         from.x,
         from.y
     );
+
 
     context.quadraticCurveTo(
         controlX,
@@ -1763,16 +2275,19 @@ function drawConnection(
         to.y
     );
 
+
     context.strokeStyle =
-        type ===
-            "external"
+        type === "external"
             ? `rgba(150,160,255,${alpha})`
             : `rgba(80,210,230,${alpha})`;
+
 
     context.lineWidth =
         1.4;
 
+
     context.stroke();
+
 
     context.restore();
 }
@@ -1785,46 +2300,56 @@ function drawConnection(
 function drawParticles(
     context
 ) {
+
     for (
         const particle of particles
     ) {
+
         const edge =
             topologyEdges[
                 particle.edgeIndex
             ];
 
+
         if (!edge) {
             continue;
         }
+
 
         const from =
             findNode(
                 edge.from
             );
 
+
         const to =
             findNode(
                 edge.to
             );
 
+
         if (
             !from ||
             !to
         ) {
+
             continue;
         }
+
 
         particle.progress +=
             particle.speed *
             16;
 
+
         if (
-            particle.progress >=
-            1
+            particle.progress >= 1
         ) {
+
             particle.progress =
                 0;
         }
+
 
         const point =
             bezierPoint(
@@ -1833,15 +2358,18 @@ function drawParticles(
                 particle.progress
             );
 
+
         const particleColor =
-            edge.type ===
-                "external"
+            edge.type === "external"
                 ? "#9da8ff"
                 : "#62e6ff";
 
+
         context.save();
 
+
         context.beginPath();
+
 
         context.arc(
             point.x,
@@ -1851,16 +2379,21 @@ function drawParticles(
             Math.PI * 2
         );
 
+
         context.fillStyle =
             particleColor;
+
 
         context.shadowColor =
             particleColor;
 
+
         context.shadowBlur =
             10;
 
+
         context.fill();
+
 
         context.restore();
     }
@@ -1875,28 +2408,36 @@ function drawDeviceNode(
     context,
     node
 ) {
+
     let stroke =
         "#4ed8e9";
+
 
     if (
         node.status ===
         "CRITICAL"
     ) {
+
         stroke =
             "#ff6464";
     }
+
 
     if (
         node.status ===
         "SUSPICIOUS"
     ) {
+
         stroke =
             "#ffb45c";
     }
 
+
     context.save();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -1906,15 +2447,20 @@ function drawDeviceNode(
         Math.PI * 2
     );
 
+
     context.strokeStyle =
         `${stroke}22`;
+
 
     context.lineWidth =
         1;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -1924,20 +2470,27 @@ function drawDeviceNode(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         "#0c1a20";
 
+
     context.fill();
+
 
     context.strokeStyle =
         stroke;
 
+
     context.lineWidth =
         1.8;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -1947,33 +2500,43 @@ function drawDeviceNode(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         stroke;
+
 
     context.shadowColor =
         stroke;
 
+
     context.shadowBlur =
         9;
 
+
     context.fill();
+
 
     context.shadowBlur =
         0;
+
 
     const labelX =
         node.x +
         node.radius +
         13;
 
+
     context.textAlign =
         "left";
+
 
     context.font =
         "700 10px Arial";
 
+
     context.fillStyle =
         "#d7e9ee";
+
 
     context.fillText(
         node.label,
@@ -1981,11 +2544,14 @@ function drawDeviceNode(
         node.y - 3
     );
 
+
     context.font =
         "9px Arial";
 
+
     context.fillStyle =
         "#708991";
+
 
     const sublabel =
         node.sublabel ===
@@ -1993,11 +2559,13 @@ function drawDeviceNode(
             ? "Network device"
             : node.sublabel;
 
+
     context.fillText(
         sublabel,
         labelX,
         node.y + 11
     );
+
 
     context.restore();
 }
@@ -2011,9 +2579,12 @@ function drawExternalNode(
     context,
     node
 ) {
+
     context.save();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2023,15 +2594,20 @@ function drawExternalNode(
         Math.PI * 2
     );
 
+
     context.strokeStyle =
         "rgba(157,168,255,0.12)";
+
 
     context.lineWidth =
         1;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2041,20 +2617,27 @@ function drawExternalNode(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         "#11152a";
 
+
     context.fill();
+
 
     context.strokeStyle =
         "#8f9aff";
 
+
     context.lineWidth =
         1.5;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2064,33 +2647,43 @@ function drawExternalNode(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         "#9da8ff";
+
 
     context.shadowColor =
         "#9da8ff";
 
+
     context.shadowBlur =
         8;
 
+
     context.fill();
+
 
     context.shadowBlur =
         0;
+
 
     const labelX =
         node.x -
         node.radius -
         13;
 
+
     context.textAlign =
         "right";
+
 
     context.font =
         "700 9px Arial";
 
+
     context.fillStyle =
         "#cbd0ff";
+
 
     context.fillText(
         node.label,
@@ -2098,17 +2691,21 @@ function drawExternalNode(
         node.y - 3
     );
 
+
     context.font =
         "8px Arial";
 
+
     context.fillStyle =
         "#69728c";
+
 
     context.fillText(
         node.sublabel,
         labelX,
         node.y + 11
     );
+
 
     context.restore();
 }
@@ -2123,6 +2720,7 @@ function drawSensor(
     node,
     time
 ) {
+
     const pulse =
         (
             Math.sin(
@@ -2132,9 +2730,12 @@ function drawSensor(
         ) *
         0.5;
 
+
     context.save();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2146,15 +2747,20 @@ function drawSensor(
         Math.PI * 2
     );
 
+
     context.strokeStyle =
         `rgba(80,220,235,${0.07 + pulse * 0.08})`;
+
 
     context.lineWidth =
         2;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2164,15 +2770,20 @@ function drawSensor(
         Math.PI * 2
     );
 
+
     context.strokeStyle =
         "rgba(80,220,235,0.20)";
+
 
     context.lineWidth =
         1;
 
+
     context.stroke();
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2182,29 +2793,39 @@ function drawSensor(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         "#0a2027";
 
+
     context.fill();
+
 
     context.strokeStyle =
         "#62e6ff";
 
+
     context.lineWidth =
         2;
+
 
     context.shadowColor =
         "#62e6ff";
 
+
     context.shadowBlur =
         18;
 
+
     context.stroke();
+
 
     context.shadowBlur =
         0;
 
+
     context.beginPath();
+
 
     context.arc(
         node.x,
@@ -2214,28 +2835,37 @@ function drawSensor(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         "#62e6ff";
+
 
     context.shadowColor =
         "#62e6ff";
 
+
     context.shadowBlur =
         16;
 
+
     context.fill();
+
 
     context.shadowBlur =
         0;
 
+
     context.textAlign =
         "center";
+
 
     context.font =
         "800 12px Arial";
 
+
     context.fillStyle =
         "#e5fbff";
+
 
     context.fillText(
         node.label,
@@ -2245,11 +2875,14 @@ function drawSensor(
             22
     );
 
+
     context.font =
         "700 9px Arial";
 
+
     context.fillStyle =
         "#6ed5df";
+
 
     context.fillText(
         node.sublabel,
@@ -2258,6 +2891,7 @@ function drawSensor(
             node.radius +
             37
     );
+
 
     context.restore();
 }
@@ -2271,9 +2905,12 @@ function drawLiveIndicator(
     context,
     width
 ) {
+
     context.save();
 
+
     context.beginPath();
+
 
     context.arc(
         width - 26,
@@ -2283,30 +2920,39 @@ function drawLiveIndicator(
         Math.PI * 2
     );
 
+
     context.fillStyle =
         topologyPaused
             ? "#ffb45c"
             : "#70e0a1";
 
+
     context.shadowColor =
         context.fillStyle;
+
 
     context.shadowBlur =
         8;
 
+
     context.fill();
+
 
     context.shadowBlur =
         0;
 
+
     context.textAlign =
         "right";
+
 
     context.font =
         "700 8px Arial";
 
+
     context.fillStyle =
         "#6c828b";
+
 
     context.fillText(
         topologyPaused
@@ -2315,6 +2961,7 @@ function drawLiveIndicator(
         width - 35,
         27
     );
+
 
     context.restore();
 }
@@ -2327,15 +2974,19 @@ function drawLiveIndicator(
 function drawTopology(
     time = performance.now()
 ) {
+
     if (
         !canvas ||
         !ctx
     ) {
+
         return;
     }
 
+
     const rect =
         canvas.getBoundingClientRect();
+
 
     const width =
         Math.max(
@@ -2343,25 +2994,32 @@ function drawTopology(
             600
         );
 
+
     const height =
         Math.max(
             rect.height,
             400
         );
 
+
     const ratio =
         window.devicePixelRatio ||
         1;
 
+
     const targetWidth =
         Math.floor(
-            width * ratio
+            width *
+            ratio
         );
+
 
     const targetHeight =
         Math.floor(
-            height * ratio
+            height *
+            ratio
         );
+
 
     if (
         canvas.width !==
@@ -2369,12 +3027,14 @@ function drawTopology(
         canvas.height !==
             targetHeight
     ) {
+
         canvas.width =
             targetWidth;
 
         canvas.height =
             targetHeight;
     }
+
 
     ctx.setTransform(
         ratio,
@@ -2385,6 +3045,7 @@ function drawTopology(
         0
     );
 
+
     ctx.clearRect(
         0,
         0,
@@ -2392,11 +3053,13 @@ function drawTopology(
         height
     );
 
+
     drawGrid(
         ctx,
         width,
         height
     );
+
 
     drawZones(
         ctx,
@@ -2404,25 +3067,31 @@ function drawTopology(
         height
     );
 
+
     for (
         const edge of topologyEdges
     ) {
+
         const from =
             findNode(
                 edge.from
             );
+
 
         const to =
             findNode(
                 edge.to
             );
 
+
         if (
             !from ||
             !to
         ) {
+
             continue;
         }
+
 
         drawConnection(
             ctx,
@@ -2432,39 +3101,44 @@ function drawTopology(
         );
     }
 
+
     if (
         !topologyPaused
     ) {
+
         drawParticles(
             ctx
         );
     }
 
+
     for (
         const node of topologyNodes
     ) {
+
         if (
             node.type ===
             "sensor"
         ) {
+
             drawSensor(
                 ctx,
                 node,
                 time
             );
-        }
 
-        else if (
+        } else if (
             node.type ===
             "external"
         ) {
+
             drawExternalNode(
                 ctx,
                 node
             );
-        }
 
-        else {
+        } else {
+
             drawDeviceNode(
                 ctx,
                 node
@@ -2472,14 +3146,17 @@ function drawTopology(
         }
     }
 
+
     drawLiveIndicator(
         ctx,
         width
     );
 
+
     if (
         !topologyPaused
     ) {
+
         animationFrame =
             requestAnimationFrame(
                 drawTopology
@@ -2493,43 +3170,131 @@ function drawTopology(
 ============================================================ */
 
 async function loadNetwork() {
+
     try {
+
         const [
             deviceResponse,
             trafficResponse,
             statsResponse
         ] =
-            await Promise.all([
-                fetchJSON(
-                    `/api/devices?limit=${DEVICE_LIMIT}`
-                ),
+            await Promise.all(
+                [
+                    fetchJSON(
+                        `/api/devices?limit=${DEVICE_LIMIT}`
+                    ),
 
-                fetchJSON(
-                    `/api/traffic?limit=${TRAFFIC_LIMIT}`
-                ),
+                    fetchJSON(
+                        `/api/traffic?limit=${TRAFFIC_LIMIT}`
+                    ),
 
-                fetchJSON(
-                    "/api/stats"
-                )
-            ]);
+                    fetchJSON(
+                        "/api/stats"
+                    )
+                ]
+            );
+
+
+        /*
+         * Backend already filters by client.
+         *
+         * The frontend performs a second ownership check.
+         */
 
         devices =
-            Array.isArray(
-                deviceResponse
-            )
-                ? deviceResponse
-                : [];
+            filterClientRecords(
+                Array.isArray(
+                    deviceResponse
+                )
+                    ? deviceResponse
+                    : deviceResponse?.records
+            );
+
 
         traffic =
-            Array.isArray(
-                trafficResponse
-            )
-                ? trafficResponse
-                : [];
+            filterClientRecords(
+                Array.isArray(
+                    trafficResponse
+                )
+                    ? trafficResponse
+                    : trafficResponse?.records
+            );
+
 
         stats =
             statsResponse ||
             {};
+
+
+        /*
+         * Verify the stats belong to this browser.
+         */
+
+        if (
+            NETWORK_CLIENT_ID &&
+            stats.client_id &&
+            String(
+                stats.client_id
+            ) !== NETWORK_CLIENT_ID
+        ) {
+
+            console.error(
+                "NETSENTINEL: Network stats client mismatch.",
+                {
+                    expected:
+                        NETWORK_CLIENT_ID,
+
+                    received:
+                        stats.client_id
+                }
+            );
+
+
+            stats = {
+                client_id:
+                    NETWORK_CLIENT_ID,
+
+                active_connections:
+                    0,
+
+                active_devices:
+                    0,
+
+                packets_captured:
+                    0,
+
+                monitoring_enabled:
+                    false,
+
+                ids_status:
+                    "stopped",
+
+                mode:
+                    "LIVE",
+
+                last_packet_at:
+                    null,
+
+                network_interface:
+                    null,
+
+                capture:
+                    {
+                        running:
+                            false,
+
+                        interface:
+                            null,
+
+                        packets_captured:
+                            0,
+
+                        client_id:
+                            NETWORK_CLIENT_ID
+                    }
+            };
+        }
+
 
         renderStats();
 
@@ -2539,9 +3304,11 @@ async function loadNetwork() {
 
         buildTopologyData();
 
+
         if (
             animationFrame
         ) {
+
             cancelAnimationFrame(
                 animationFrame
             );
@@ -2550,30 +3317,35 @@ async function loadNetwork() {
                 null;
         }
 
+
         if (
             !topologyPaused
         ) {
+
             animationFrame =
                 requestAnimationFrame(
                     drawTopology
                 );
-        }
 
-        else {
+        } else {
+
             drawTopology();
         }
 
     }
 
     catch (error) {
+
         console.error(
             "NETSENTINEL: Network update failed:",
             error
         );
 
+
         if (
             sensorStatus
         ) {
+
             sensorStatus.textContent =
                 "TELEMETRY ERROR";
 
@@ -2589,12 +3361,15 @@ async function loadNetwork() {
 ============================================================ */
 
 function resetTopology() {
+
     topologyPaused =
         false;
+
 
     if (
         animationFrame
     ) {
+
         cancelAnimationFrame(
             animationFrame
         );
@@ -2603,7 +3378,9 @@ function resetTopology() {
             null;
     }
 
+
     buildTopologyData();
+
 
     animationFrame =
         requestAnimationFrame(
@@ -2619,9 +3396,11 @@ function resetTopology() {
 if (
     searchInput
 ) {
+
     searchInput.addEventListener(
         "input",
         () => {
+
             renderDevices();
         }
     );
@@ -2635,9 +3414,11 @@ if (
 if (
     statusFilter
 ) {
+
     statusFilter.addEventListener(
         "change",
         () => {
+
             renderDevices();
         }
     );
@@ -2651,22 +3432,29 @@ if (
 if (
     refreshButton
 ) {
+
     refreshButton.addEventListener(
         "click",
         async () => {
+
             refreshButton.disabled =
                 true;
+
 
             const originalText =
                 refreshButton.textContent;
 
+
             refreshButton.textContent =
                 "Refreshing...";
 
+
             await loadNetwork();
+
 
             refreshButton.disabled =
                 false;
+
 
             refreshButton.textContent =
                 originalText ||
@@ -2683,9 +3471,11 @@ if (
 if (
     resetTopologyButton
 ) {
+
     resetTopologyButton.addEventListener(
         "click",
         () => {
+
             resetTopology();
         }
     );
@@ -2699,18 +3489,23 @@ if (
 if (
     canvas
 ) {
+
     canvas.addEventListener(
         "dblclick",
         () => {
+
             topologyPaused =
                 !topologyPaused;
+
 
             if (
                 topologyPaused
             ) {
+
                 if (
                     animationFrame
                 ) {
+
                     cancelAnimationFrame(
                         animationFrame
                     );
@@ -2719,10 +3514,11 @@ if (
                         null;
                 }
 
-                drawTopology();
-            }
 
-            else {
+                drawTopology();
+
+            } else {
+
                 animationFrame =
                     requestAnimationFrame(
                         drawTopology
@@ -2740,11 +3536,14 @@ if (
 window.addEventListener(
     "resize",
     () => {
+
         buildTopologyData();
+
 
         if (
             topologyPaused
         ) {
+
             drawTopology();
         }
     }
@@ -2764,7 +3563,9 @@ loadNetwork();
 
 setInterval(
     () => {
+
         loadNetwork();
+
     },
     POLL_INTERVAL
 );
