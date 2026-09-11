@@ -724,6 +724,8 @@ def _demo_loop(
     socketio,
     client_id,
 ):
+    manager = None
+
     try:
 
         manager = get_manager(
@@ -731,6 +733,23 @@ def _demo_loop(
             socketio=socketio,
             client_id=client_id,
         )
+
+        # ----------------------------------------------------
+        # IMPORTANT:
+        # The CaptureManager.status() method calculates uptime
+        # from manager.started_at. Make sure a client-specific
+        # DEMO worker always has a valid start timestamp.
+        # ----------------------------------------------------
+
+        if manager.started_at is None:
+
+            manager.started_at = (
+                manager.utc_now()
+            )
+
+        manager.interface = "DEMO"
+        manager.running = True
+        manager.client_id = client_id
 
         while _is_client_running(
             client_id
@@ -754,11 +773,13 @@ def _demo_loop(
 
         try:
 
-            manager = get_manager(
-                app=app,
-                socketio=socketio,
-                client_id=client_id,
-            )
+            if manager is None:
+
+                manager = get_manager(
+                    app=app,
+                    socketio=socketio,
+                    client_id=client_id,
+                )
 
             manager.set_error(
                 exc
@@ -769,6 +790,16 @@ def _demo_loop(
             pass
 
     finally:
+
+        if manager is not None:
+
+            try:
+
+                manager.running = False
+
+            except Exception:
+
+                pass
 
         with _demo_lock:
 
@@ -951,6 +982,28 @@ def start_demo_for_client(
                 ),
             }
 
+        # ----------------------------------------------------
+        # Create/get the isolated CaptureManager now and set
+        # the start time BEFORE the worker thread starts.
+        # This ensures /api/stats can immediately calculate
+        # uptime_seconds correctly.
+        # ----------------------------------------------------
+
+        manager = get_manager(
+            app=real_app,
+            socketio=socketio,
+            client_id=client_id,
+        )
+
+        manager.client_id = client_id
+        manager.interface = "DEMO"
+        manager.running = True
+        manager.started_at = (
+            manager.utc_now()
+        )
+        manager.last_packet_at = None
+        manager.last_error = None
+
         _demo_running[
             client_id
         ] = True
@@ -1033,6 +1086,22 @@ def stop_demo_for_client(
             client_id
         ] = False
 
+    manager = None
+
+    try:
+
+        manager = get_manager(
+            client_id=client_id
+        )
+
+        if manager is not None:
+
+            manager.running = False
+
+    except Exception:
+
+        pass
+
     return {
         "success": True,
         "stopped": True,
@@ -1053,13 +1122,31 @@ def stop_demo():
 
     with _demo_lock:
 
-        for client_id in list(
+        client_ids = list(
             _demo_running.keys()
-        ):
+        )
+
+        for client_id in client_ids:
 
             _demo_running[
                 client_id
             ] = False
+
+    for client_id in client_ids:
+
+        try:
+
+            manager = get_manager(
+                client_id=client_id
+            )
+
+            if manager is not None:
+
+                manager.running = False
+
+        except Exception:
+
+            pass
 
     return {
         "success": True,
